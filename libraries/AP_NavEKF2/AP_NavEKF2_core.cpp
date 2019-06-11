@@ -588,7 +588,8 @@ void NavEKF2_core::UpdateStrapdownEquationsNED()
     // have been rotated into that frame
     // * and + operators have been overloaded
     Vector3f delVelNav;  // delta velocity vector in earth axes
-    delVelNav  = prevTnb.mul_transpose(delVelCorrected);
+    //prevTnb(导航系到机体系）转置后乘向量，相当于机体系到导航系
+    delVelNav  = prevTnb.mul_transpose(delVelCorrected); 
     delVelNav.z += GRAVITY_MSS*imuDataDelayed.delVelDT;
 
     // calculate the body to nav cosine matrix

@@ -27,6 +27,8 @@ void NavEKF2_core::readRangeFinder(void)
 
     // get theoretical correct range when the vehicle is on the ground
     // don't allow range to go below 5cm because this can cause problems with optical flow processing
+    // 当飞机在地面上时，获得理论上正确的范围
+    // 不要让范围低于5厘米，因为这会导致光流处理出现问题
     rngOnGnd = MAX(frontend->_rng.ground_clearance_cm_orient(ROTATION_PITCH_270) * 0.01f, 0.05f);
 
     // read range finder at 20Hz
@@ -280,7 +282,10 @@ void NavEKF2_core::readMagData()
  *  for storage in the data buffers used by the EKF. If the IMU data arrives at
  *  lower rate than 100Hz, then no downsampling or upsampling will be performed.
  *  Downsampling is done using a method that does not introduce coning or sculling
- *  errors.
+ *  errors. 
+ *	读取惯性测量单元增量角和增量速度测量值，并向下采样至100赫兹，以存储在EKF使用的数据缓冲器中。
+ *	如果惯性测量单元数据以低于100赫兹的速率到达，则不会执行下采样或上采样。下采样是使用不引入锥
+ *	形或双桨误差的方法完成的。
  */
 void NavEKF2_core::readIMUData()
 {
@@ -335,11 +340,15 @@ void NavEKF2_core::readIMUData()
      * then store the accumulated IMU data to be used by the state prediction, ignoring the frontend permission if more
      * than twice the target time has lapsed. Adjust the target EKF step time threshold to allow for timing jitter in the
      * IMU data.
+     
+	 如果目标EKF时间步长已经累积，并且前端已经允许开始新的预测周期，则存储累积的IMU数据以供状态预测使用，
+	 如果超过目标时间两倍，则忽略前端许可。调整目标EKF步进时间阈值，以考虑惯性测量单元数据中的时序抖动。
      */
-    if ((dtIMUavg*(float)framesSincePredict >= (EKF_TARGET_DT-(dtIMUavg*0.5)) &&
-         startPredictEnabled) || (dtIMUavg*(float)framesSincePredict >= 2.0f*EKF_TARGET_DT)) {
+    if ((dtIMUavg*(float)framesSincePredict >= (EKF_TARGET_DT-(dtIMUavg*0.5)) && startPredictEnabled) 
+		|| (dtIMUavg*(float)framesSincePredict >= 2.0f*EKF_TARGET_DT)) {
 
         // convert the accumulated quaternion to an equivalent delta angle
+        // 四元数转为向量
         imuQuatDownSampleNew.to_axis_angle(imuDataDownSampledNew.delAng);
 
         // Time stamp the data
@@ -378,6 +387,7 @@ void NavEKF2_core::readIMUData()
         updateTimingStatistics();
             
         // correct the extracted IMU data for sensor errors
+        // 纠正提取的惯性测量单元数据中的传感器错误
         delAngCorrected = imuDataDelayed.delAng;
         delVelCorrected = imuDataDelayed.delVel;
         correctDeltaAngle(delAngCorrected, imuDataDelayed.delAngDT);
