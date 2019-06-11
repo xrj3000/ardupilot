@@ -579,6 +579,7 @@ void NavEKF2_core::UpdateStrapdownEquationsNED()
     // the delta angle rotation quaternion and normalise
     // apply correction for earth's rotation rate
     // % * - and + operators have been overloaded
+    // 说明：修正地球自转对增量角的影响
     stateStruct.quat.rotate(delAngCorrected - prevTnb * earthRateNED*imuDataDelayed.delAngDT);
     stateStruct.quat.normalize();
 
@@ -591,10 +592,12 @@ void NavEKF2_core::UpdateStrapdownEquationsNED()
     delVelNav.z += GRAVITY_MSS*imuDataDelayed.delVelDT;
 
     // calculate the body to nav cosine matrix
+    // 若四元数p表示A->B变换，则p的共轭四元数表示B->A的变换
     stateStruct.quat.inverse().rotation_matrix(prevTnb);
 
     // calculate the rate of change of velocity (used for launch detect and other functions)
-    velDotNED = delVelNav / imuDataDelayed.delVelDT;
+    // 计算速度变化率（用于着陆检测和其他功能）
+    velDotNED = delVelNav / imuDataDelayed.delVelDT;	
 
     // apply a first order lowpass filter
     velDotNEDfilt = velDotNED * 0.05f + velDotNEDfilt * 0.95f;
