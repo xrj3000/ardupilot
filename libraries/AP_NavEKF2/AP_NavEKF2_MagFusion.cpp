@@ -173,6 +173,7 @@ void NavEKF2_core::controlMagYawReset()
 
 // this function is used to do a forced re-alignment of the yaw angle to align with the horizontal velocity
 // vector from GPS. It is used to align the yaw angle after launch or takeoff.
+// 该功能用于强制重新校准偏航角，以与GPS的水平速度矢量对齐。它用于在发射或起飞后对准偏航角。
 void NavEKF2_core::realignYawGPS()
 {
     if ((sq(gpsDataDelayed.vel.x) + sq(gpsDataDelayed.vel.y)) > 25.0f) {

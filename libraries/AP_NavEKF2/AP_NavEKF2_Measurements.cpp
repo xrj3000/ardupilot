@@ -292,6 +292,7 @@ void NavEKF2_core::readIMUData()
     const AP_InertialSensor &ins = AP::ins();
 
     // average IMU sampling rate
+    //400Hz,0.0025s
     dtIMUavg = ins.get_loop_delta_t();
 
     // the imu sample time is used as a common time reference throughout the filter
@@ -322,7 +323,7 @@ void NavEKF2_core::readIMUData()
 
     // Rotate quaternon atitude from previous to new and normalise.
     // Accumulation using quaternions prevents introduction of coning errors due to downsampling
-    imuQuatDownSampleNew.rotate(imuDataNew.delAng);
+    imuQuatDownSampleNew.rotate(imuDataNew.delAng);// 注：四元数的增量累加在rotate中执行
     imuQuatDownSampleNew.normalize();
 
     // Rotate the latest delta velocity into body frame at the start of accumulation
@@ -550,8 +551,8 @@ bool NavEKF2_core::readDeltaAngle(uint8_t ins_index, Vector3f &dAng, float &dAng
     if (ins_index < ins.get_gyro_count()) {
         ins.get_delta_angle(ins_index,dAng);
         frontend->logging.log_imu = true;
-        dAng_dt = MAX(ins.get_delta_angle_dt(imu_index),1.0e-4f);
-        dAng_dt = MIN(dAng_dt,1.0e-1f);
+        dAng_dt = MAX(ins.get_delta_angle_dt(imu_index),1.0e-4f);// 最小0.0001
+        dAng_dt = MIN(dAng_dt,1.0e-1f);// 最大0.1
         return true;
     }
     return false;
@@ -566,7 +567,9 @@ bool NavEKF2_core::readDeltaAngle(uint8_t ins_index, Vector3f &dAng, float &dAng
 void NavEKF2_core::readBaroData()
 {
     // check to see if baro measurement has changed so we know if a new measurement has arrived
+    // 检查气压计量测是否有变化，以判断是否是新的量测到达
     // do not accept data at a faster rate than 14Hz to avoid overflowing the FIFO buffer
+    // 不接收超过14Hz的数据以避免FIFO缓存器溢出
     const AP_Baro &baro = AP::baro();
     if (baro.get_last_update() - lastBaroReceived_ms > 70) {
         frontend->logging.log_baro = true;
@@ -574,7 +577,9 @@ void NavEKF2_core::readBaroData()
         baroDataNew.hgt = baro.get_altitude();
 
         // If we are in takeoff mode, the height measurement is limited to be no less than the measurement at start of takeoff
+        // 如果在起飞模式，限制高度量测值不超过起飞开始的量测值
         // This prevents negative baro disturbances due to copter downwash corrupting the EKF altitude during initial ascent
+        // 这阻止负气压
         if (getTakeoffExpected()) {
             baroDataNew.hgt = MAX(baroDataNew.hgt, meaHgtAtTakeOff);
         }
@@ -599,6 +604,9 @@ void NavEKF2_core::readBaroData()
 // calculate filtered offset between baro height measurement and EKF height estimate
 // offset should be subtracted from baro measurement to match filter estimate
 // offset is used to enable reversion to baro from alternate height data source
+// 计算高度量测和EFK高度预估之间的滤波偏移
+// 应当从量测值中减去偏移以匹配滤波器估计
+// 
 void NavEKF2_core::calcFiltBaroOffset()
 {
     // Apply a first order LPF with spike protection
@@ -609,8 +617,9 @@ void NavEKF2_core::calcFiltBaroOffset()
 void NavEKF2_core::correctEkfOriginHeight()
 {
     // Estimate the WGS-84 height of the EKF's origin using a Bayes filter
-
+    // 使用被页斯滤波器预估WGS-84下的EKF初始位置的高度
     // calculate the variance of our a-priori estimate of the ekf origin height
+    // 计算EKF初始位置高度先验估计的方差
     float deltaTime = constrain_float(0.001f * (imuDataDelayed.time_ms - lastOriginHgtTime_ms), 0.0f, 1.0f);
     if (activeHgtSource == HGT_SOURCE_BARO) {
         // Use the baro drift rate

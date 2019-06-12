@@ -242,6 +242,8 @@ void AP_Baro::calibrate(bool save)
    update the barometer calibration
    this updates the baro ground calibration to the current values. It
    can be used before arming to keep the baro well calibrated
+   更新气压计校准。这将大气压力地面校准更新为当前值。
+   它可以在解锁前使用，以保持气压校准良好
 */
 void AP_Baro::update_calibration()
 {
@@ -252,6 +254,7 @@ void AP_Baro::update_calibration()
         }
 
         // don't notify the GCS too rapidly or we flood the link
+        //  不要快速的通知地面站，以避免淹没链接
         uint32_t now = AP_HAL::millis();
         if (now - _last_notify_ms > 10000) {
             sensors[i].ground_pressure.notify();

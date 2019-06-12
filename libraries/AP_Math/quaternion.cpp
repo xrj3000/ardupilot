@@ -183,7 +183,7 @@ void Quaternion::rotate(const Vector3f &v)
 {
     Quaternion r;
     r.from_axis_angle(v);
-    (*this) *= r;
+    (*this) *= r; // 四元数增量累加
 }
 
 void Quaternion::to_axis_angle(Vector3f &v)

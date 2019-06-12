@@ -201,10 +201,12 @@ void NavEKF2_core::ResetHeight(void)
 
 // Zero the EKF height datum
 // Return true if the height datum reset has been performed
+// 如果高度数据复位已经被执行，则返回真
 bool NavEKF2_core::resetHeightDatum(void)
 {
     if (activeHgtSource == HGT_SOURCE_RNG) {
         // by definition the height datum is at ground level so cannot perform the reset
+        // 根据定义，高度基准位于地面，因此无法执行重置
         return false;
     }
     // record the old height estimate
@@ -256,9 +258,11 @@ void NavEKF2_core::SelectVelPosFusion()
         extNavUsedForPos = false;
 
         // correct GPS data for position offset of antenna phase centre relative to the IMU
+        // 校正相对于惯性测量单元的天线相位中心位置偏移的GPS数据(通过地面站设置，参数为xxx)
         Vector3f posOffsetBody = AP::gps().get_antenna_offset(gpsDataDelayed.sensor_idx) - accelPosOffset;
         if (!posOffsetBody.is_zero()) {
             // Don't fuse velocity data if GPS doesn't support it
+            // 如果GPS不支持，不要融合速度数据
             if (fuseVelData) {
                 // TODO use a filtered angular rate with a group delay that matches the GPS delay
                 Vector3f angRate = imuDataDelayed.delAng * (1.0f/imuDataDelayed.delAngDT);
@@ -286,6 +290,7 @@ void NavEKF2_core::SelectVelPosFusion()
 
     } else if (extNavDataToFuse && PV_AidingMode == AID_ABSOLUTE) {
         // This is a special case that uses and external nav system for position
+        // 使用外部导航系统定位
         extNavUsedForPos = true;
         activeHgtSource = HGT_SOURCE_EV;
         fuseVelData = false;
@@ -322,10 +327,11 @@ void NavEKF2_core::SelectVelPosFusion()
     }
 
     // Select height data to be fused from the available baro, range finder and GPS sources
-
+	// 从何用的气压计、测距机和GPS源选择高度数据进行融合
     selectHeightForFusion();
 
     // if we are using GPS, check for a change in receiver and reset position and height
+      // 如果我们使用全球定位系统，检查接收器的变化并重置位置和高度。（多于一个GPS时，GPS进行了切换）
     if (gpsDataToFuse && PV_AidingMode == AID_ABSOLUTE && gpsDataDelayed.sensor_idx != last_gps_idx) {
         // record the ID of the GPS that we are using for the reset
         last_gps_idx = gpsDataDelayed.sensor_idx;
@@ -339,10 +345,12 @@ void NavEKF2_core::SelectVelPosFusion()
         stateStruct.position.y = gpsDataNew.pos.y;
 
         // Calculate the position offset due to the reset
+        // 切换到GPS的位置数据与切换前的GPS位置数据的差值
         posResetNE.x = stateStruct.position.x - posResetNE.x;
         posResetNE.y = stateStruct.position.y - posResetNE.y;
 
         // Add the offset to the output observer states
+        // 添加偏移量值输出观测状态
         for (uint8_t i=0; i<imu_buffer_length; i++) {
             storedOutput[i].position.x += posResetNE.x;
             storedOutput[i].position.y += posResetNE.y;
