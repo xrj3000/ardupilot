@@ -364,6 +364,7 @@ void NavEKF2_core::SelectVelPosFusion()
         lastPosReset_ms = imuSampleTime_ms;
 
         // If we are alseo using GPS as the height reference, reset the height
+        // 如果同时使用了GPS作为高度参考，复位高度
         if (activeHgtSource == HGT_SOURCE_GPS) {
             // Store the position before the reset so that we can record the reset delta
             posResetD = stateStruct.position.z;
@@ -389,6 +390,8 @@ void NavEKF2_core::SelectVelPosFusion()
     // If we are operating without any aiding, fuse in the last known position
     // to constrain tilt drift. This assumes a non-manoeuvring vehicle
     // Do this to coincide with the height fusion
+	// 如果我们在没有任何辅助定位的情况下工作，融合最后一个已知位置，以抑制倾斜漂移。
+	// 这假设一辆非机动车辆。这样做是为了与高度融合一致
     if (fuseHgtData && PV_AidingMode == AID_NONE) {
         velPosObs[3] = lastKnownPositionNE.x;
         velPosObs[4] = lastKnownPositionNE.y;
@@ -436,16 +439,22 @@ void NavEKF2_core::FuseVelPosNED()
     // data from the GPS receiver it is the only assumption we can make
     // so we might as well take advantage of the computational efficiencies
     // associated with sequential fusion
+    // 执行GPS量测的顺序融合。这假设不同速度和位置分量中的误差是不相关的，这是不正确的，
+    // 但是在没有来自GPS接收器的协方差数据的情况下，这是我们唯一可以做出的假设。
+    // 所以我们不妨利用与顺序融合相关的计算效率
     if (fuseVelData || fusePosData || fuseHgtData) {
 
         // calculate additional error in GPS position caused by manoeuvring
         float posErr = frontend->gpsPosVarAccScale * accNavMag;
 
         // estimate the GPS Velocity, GPS horiz position and height measurement variances.
+        // 估计GPS速度，GPS水平位置和高度量测方差
         // Use different errors if operating without external aiding using an assumed position or velocity of zero
-        if (PV_AidingMode == AID_NONE) {
+        // 如果在没有外部辅助定位的情况下使用假定的零位置或速度运行，则使用不同的误差
+		if (PV_AidingMode == AID_NONE) {
             if (tiltAlignComplete && motorsArmed) {
             // This is a compromise between corrections for gyro errors and reducing effect of manoeuvre accelerations on tilt estimate
+            // 这是陀螺仪误差校正和减小操纵加速度对倾斜估计的影响之间的折衷
                 R_OBS[0] = sq(constrain_float(frontend->_noaidHorizNoise, 0.5f, 50.0f));
             } else {
                 // Use a smaller value to give faster initial alignment
@@ -477,6 +486,9 @@ void NavEKF2_core::FuseVelPosNED()
             // For data integrity checks we use the same measurement variances as used to calculate the Kalman gains for all measurements except GPS horizontal velocity
             // For horizontal GPs velocity we don't want the acceptance radius to increase with reported GPS accuracy so we use a value based on best GPs perfomrance
             // plus a margin for manoeuvres. It is better to reject GPS horizontal velocity errors early
+            // 对于数据完整性检查，我们使用与计算除GPS水平速度之外的所有测量的卡尔曼增益相同的测量方差。
+			// 对于GPS速度，我们不希望接受半径随着报告的GPS精度而增加，
+			// 因此我们使用基于最佳GPS性能加上机动余量的值。最好尽早剔除GPS水平速度误差
             for (uint8_t i=0; i<=2; i++) R_OBS_DATA_CHECKS[i] = sq(constrain_float(frontend->_gpsHorizVelNoise, 0.05f, 5.0f)) + sq(frontend->gpsNEVelVarAccScale * accNavMag);
         }
         R_OBS[5] = posDownObsNoise;
@@ -485,11 +497,15 @@ void NavEKF2_core::FuseVelPosNED()
         // if vertical GPS velocity data and an independent height source is being used, check to see if the GPS vertical velocity and altimeter
         // innovations have the same sign and are outside limits. If so, then it is likely aliasing is affecting
         // the accelerometers and we should disable the GPS and barometer innovation consistency checks.
+        // 如果正在使用垂直GPS速度数据和独立的高度源，
+        // 请检查GPS垂直速度和高度表新息是否具有相同的符号并且超出限制。
+        // 如果是这样，那么混叠很可能会影响加速度计，我们应该禁用GPS和气压计新息一致性检查。
         if (useGpsVertVel && fuseVelData && (frontend->_altSource != 2)) {
             // calculate innovations for height and vertical GPS vel measurements
             float hgtErr  = stateStruct.position.z - velPosObs[5];
             float velDErr = stateStruct.velocity.z - velPosObs[2];
             // check if they are the same sign and both more than 3-sigma out of bounds
+            // 检查它们是否是同一个符号，是否都超出了3σ界限
             if ((hgtErr*velDErr > 0.0f) && (sq(hgtErr) > 9.0f * (P[8][8] + R_OBS_DATA_CHECKS[5])) && (sq(velDErr) > 9.0f * (P[5][5] + R_OBS_DATA_CHECKS[2]))) {
                 badIMUdata = true;
             } else {
@@ -499,6 +515,7 @@ void NavEKF2_core::FuseVelPosNED()
 
         // calculate innovations and check GPS data validity using an innovation consistency check
         // test position measurements
+        // 使用新息一致性检查测试位置测量值计算新息并检查全球定位系统数据有效性
         if (fusePosData) {
             // test horizontal position measurements
             innovVelPos[3] = stateStruct.position.x - velPosObs[3];
@@ -506,6 +523,7 @@ void NavEKF2_core::FuseVelPosNED()
             varInnovVelPos[3] = P[6][6] + R_OBS_DATA_CHECKS[3];
             varInnovVelPos[4] = P[7][7] + R_OBS_DATA_CHECKS[4];
             // apply an innovation consistency threshold test, but don't fail if bad IMU data
+            // 应用创新一致性阈值测试，但如果惯性测量单元数据不佳，不要失败
             float maxPosInnov2 = sq(MAX(0.01f * (float)frontend->_gpsPosInnovGate, 1.0f))*(varInnovVelPos[3] + varInnovVelPos[4]);
             posTestRatio = (sq(innovVelPos[3]) + sq(innovVelPos[4])) / maxPosInnov2;
             posHealth = ((posTestRatio < 1.0f) || badIMUdata);
@@ -517,6 +535,7 @@ void NavEKF2_core::FuseVelPosNED()
                 posHealth = true;
                 lastPosPassTime_ms = imuSampleTime_ms;
                 // if timed out or outside the specified uncertainty radius, reset to the GPS
+                // 如果超时或超出指定的不确定半径，重置为GPS
                 if (posTimeout || ((P[6][6] + P[7][7]) > sq(float(frontend->_gpsGlitchRadiusMax)))) {
                     // reset the position to the current GPS position
                     ResetPosition();
