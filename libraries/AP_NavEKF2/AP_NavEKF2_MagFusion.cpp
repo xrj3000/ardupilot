@@ -23,6 +23,8 @@ void NavEKF2_core::controlMagYawReset()
     // Vehicles that can use a zero sideslip assumption (Planes) are a special case
     // They can use the GPS velocity to recover from bad initial compass data
     // This allows recovery for heading alignment errors due to compass faults
+    // 可以使用零侧滑假设的车辆(飞机)是一种特殊情况。他们可以利用全球定位系统的速度从
+    // 糟糕的初始罗盘数据中恢复过来。这允许恢复由于罗盘故障引起的航向对准误差
     if (assume_zero_sideslip() && !finalInflightYawInit && inFlight ) {
         gpsYawResetRequest = true;
         return;
@@ -31,6 +33,7 @@ void NavEKF2_core::controlMagYawReset()
     }
 
     // Quaternion and delta rotation vector that are re-used for different calculations
+    // 四元数和增量旋转向量，可用于不同的计算
     Vector3f deltaRotVecTemp;
     Quaternion deltaQuatTemp;
 
@@ -38,13 +41,16 @@ void NavEKF2_core::controlMagYawReset()
     bool initialResetAllowed = false;
     if (!finalInflightYawInit) {
         // Use a quaternion division to calculate the delta quaternion between the rotation at the current and last time
+        // 使用四元数除法计算当前旋转和上次旋转之间的四元数增量
         deltaQuatTemp = stateStruct.quat / prevQuatMagReset;
         prevQuatMagReset = stateStruct.quat;
 
         // convert the quaternion to a rotation vector and find its length
+        // 将四元数转换为旋转向量，并计算其长度
         deltaQuatTemp.to_axis_angle(deltaRotVecTemp);
 
         // check if the spin rate is OK - high spin rates can cause angular alignment errors
+        // 检查旋转速度是否正常-高旋转速度会导致角度对准误差
         bool angRateOK = deltaRotVecTemp.length() < 0.1745f;
 
         initialResetAllowed = angRateOK;
@@ -53,11 +59,13 @@ void NavEKF2_core::controlMagYawReset()
     }
 
     // Check if conditions for a interim or final yaw/mag reset are met
+    // 检查是否满足中间或最终偏航/磁复位的条件
     bool finalResetRequest = false;
     bool interimResetRequest = false;
     if (flightResetAllowed && !assume_zero_sideslip()) {
         // check that we have reached a height where ground magnetic interference effects are insignificant
         // and can perform a final reset of the yaw and field states
+        // 检查我们是否已经到达地面磁干扰效应不明显的高度，并且可以执行偏航和磁场状态的最终复位
         finalResetRequest = (stateStruct.position.z  - posDownAtTakeoff) < -EKF2_MAG_FINAL_RESET_ALT;
 
         // check for increasing height
@@ -206,6 +214,7 @@ void NavEKF2_core::realignYawGPS()
             gcs().send_text(MAV_SEVERITY_INFO, "EKF2 IMU%u yaw aligned to GPS velocity",(unsigned)imu_index);
 
             // zero the attitude covariances becasue the corelations will now be invalid
+            // 将姿态协方差归零，因为相关现在无效
             zeroAttCovOnly();
 
             // record the yaw reset event
@@ -357,6 +366,9 @@ void NavEKF2_core::FuseMagnetometer()
     // so we might as well take advantage of the computational efficiencies
     // associated with sequential fusion
     // calculate observation jacobians and Kalman gains
+    // 执行磁力计测量的顺序融合。
+	//这假设不同分量中的误差是不相关的，这是不正确的，但是在没有协方差数据的情况下，
+	// 拟合是我们唯一可以做的假设，因此我们不妨利用与顺序融合相关的计算效率来计算观测雅可比数和卡尔曼增益
     if (obsIndex == 0)
     {
 
@@ -376,6 +388,7 @@ void NavEKF2_core::FuseMagnetometer()
 
         // rotate predicted earth components into body axes and calculate
         // predicted measurements
+        // 将预测的地理坐标系下的组件旋转到体轴中，并计算预测的测量值
         DCM[0][0] = q0*q0 + q1*q1 - q2*q2 - q3*q3;
         DCM[0][1] = 2.0f*(q1*q2 + q0*q3);
         DCM[0][2] = 2.0f*(q1*q3-q0*q2);
@@ -756,9 +769,13 @@ void NavEKF2_core::FuseMagnetometer()
  * The script file used to generate these and other equations in this filter can be found here:
  * https://github.com/priseborough/InertialNav/blob/master/derivations/RotationVectorAttitudeParameterisation/GenerateNavFilterEquations.m
  * This fusion method only modifies the orientation, does not require use of the magnetic field states and is computationally cheaper.
+ * 这种融合方法仅改变方向，不需要使用磁场状态，并且计算成本较低。
  * It is suitable for use when the external magnetic field environment is disturbed (eg close to metal structures, on ground).
+ * 它适用于外部磁场环境受到干扰的情况(例如靠近金属结构、地面)。
  * It is not as robust to magnetometer failures.
+ * 它对磁力计故障不太稳定。
  * It is not suitable for operation where the horizontal magnetic field strength is weak (within 30 degrees latitude of the the magnetic poles)
+ * 它不适合水平磁场强度较弱(磁极纬度30度以内)的操作
 */
 void NavEKF2_core::fuseEulerYaw()
 {
@@ -772,6 +789,7 @@ void NavEKF2_core::fuseEulerYaw()
 
     // calculate observation jacobian, predicted yaw and zero yaw body to earth rotation matrix
     // determine if a 321 or 312 Euler sequence is best
+    // 计算观测雅可比、预测偏航和零偏航体到地球的旋转矩阵，确定321或312欧拉序列是最好的
     float predicted_yaw;
     float measured_yaw;
     float H_YAW[3];
