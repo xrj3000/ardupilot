@@ -500,7 +500,7 @@ void NavEKF2_core::FuseVelPosNED()
         // 如果正在使用垂直GPS速度数据和独立的高度源，
         // 请检查GPS垂直速度和高度表新息是否具有相同的符号并且超出限制。
         // 如果是这样，那么混叠很可能会影响加速度计，我们应该禁用GPS和气压计新息一致性检查。
-        if (useGpsVertVel && fuseVelData && (frontend->_altSource != 2)) {
+        if (useGpsVertVel && fuseVelData && (frontend->_altSource != 2)) {// _altSource为2是，是以GPS为高度信息源
             // calculate innovations for height and vertical GPS vel measurements
             float hgtErr  = stateStruct.position.z - velPosObs[5];
             float velDErr = stateStruct.velocity.z - velPosObs[2];
@@ -563,6 +563,7 @@ void NavEKF2_core::FuseVelPosNED()
             // test velocity measurements
             uint8_t imax = 2;
             // Don't fuse vertical velocity observations if inhibited by the user or if we are using synthetic data
+            // 如果用户禁止或我们使用合成数据，不要融合垂直速度观测量
             if (frontend->_fusionModeGPS > 0 || PV_AidingMode != AID_ABSOLUTE || frontend->inhibitGpsVertVelUse) {
                 imax = 1;
             }
@@ -581,6 +582,7 @@ void NavEKF2_core::FuseVelPosNED()
             }
             // apply an innovation consistency threshold test, but don't fail if bad IMU data
             // calculate the test ratio
+            // 应用新息一致性阈值测试，但如果惯性测量单元数据不好，请不要失败，计算测试比率
             velTestRatio = innovVelSumSq / (varVelSum * sq(MAX(0.01f * (float)frontend->_gpsVelInnovGate, 1.0f)));
             // fail if the ratio is greater than 1
             velHealth = ((velTestRatio < 1.0f)  || badIMUdata);
@@ -596,7 +598,7 @@ void NavEKF2_core::FuseVelPosNED()
                     // don't fuse GPS velocity data on this time step
                     fuseVelData = false;
                     // Reset the normalised innovation to avoid failing the bad fusion tests
-                    velTestRatio = 0.0f;
+                    velTestRatio = 0.0f;	
                 }
             } else {
                 velHealth = false;
@@ -616,7 +618,8 @@ void NavEKF2_core::FuseVelPosNED()
             if (hgtHealth || hgtTimeout || (PV_AidingMode == AID_NONE && onGround)) {
                 // Calculate a filtered value to be used by pre-flight health checks
                 // We need to filter because wind gusts can generate significant baro noise and we want to be able to detect bias errors in the inertial solution
-                if (onGround) {
+				// 我们需要滤波，因为风会产生显著的气压噪声，我们希望能够检测惯性方案中的偏置误差
+				if (onGround) {
                     float dtBaro = (imuSampleTime_ms - lastHgtPassTime_ms)*1.0e-3f;
                     const float hgtInnovFiltTC = 2.0f;
                     float alpha = constrain_float(dtBaro/(dtBaro+hgtInnovFiltTC),0.0f,1.0f);
@@ -660,6 +663,8 @@ void NavEKF2_core::FuseVelPosNED()
                 stateIndex = 3 + obsIndex;
                 // calculate the measurement innovation, using states from a different time coordinate if fusing height data
                 // adjust scaling on GPS measurement noise variances if not enough satellites
+                //如果融合高度数据，使用不同时间坐标的状态计算测量新息
+				//如果卫星数量不足，调整GPS测量噪声方差的比例
                 if (obsIndex <= 2)
                 {
                     innovVelPos[obsIndex] = stateStruct.velocity[obsIndex] - velPosObs[obsIndex];
@@ -722,6 +727,7 @@ void NavEKF2_core::FuseVelPosNED()
                     }
                 }
                 // Check that we are not going to drive any variances negative and skip the update if so
+                // 检查我们是否不会将任何差异变为负值，如果是，请跳过更新
                 bool healthyFusion = true;
                 for (uint8_t i= 0; i<=stateIndexLim; i++) {
                     if (KHP[i][i] > P[i][i]) {
@@ -751,6 +757,7 @@ void NavEKF2_core::FuseVelPosNED()
 
                     // the first 3 states represent the angular misalignment vector. This is
                     // is used to correct the estimated quaternion
+                    // 前3个状态代表角度失准矢量。这用于校正估计的四元数
                     stateStruct.quat.rotate(stateStruct.angErr);
 
                     // sum the attitude error from velocity and position fusion only

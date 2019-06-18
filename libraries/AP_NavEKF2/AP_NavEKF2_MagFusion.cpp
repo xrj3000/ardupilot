@@ -789,13 +789,14 @@ void NavEKF2_core::fuseEulerYaw()
 
     // calculate observation jacobian, predicted yaw and zero yaw body to earth rotation matrix
     // determine if a 321 or 312 Euler sequence is best
-    // 计算观测雅可比、预测偏航和零偏航体到地球的旋转矩阵，确定321或312欧拉序列是最好的
+    // 计算观测雅可比、预测偏航角和零偏航体到地球的旋转矩阵，确定欧拉序列是321还是312
     float predicted_yaw;
     float measured_yaw;
     float H_YAW[3];
     Matrix3f Tbn_zeroYaw;
     if (fabsf(prevTnb[0][2]) < fabsf(prevTnb[1][2])) {
         // calculate observation jacobian when we are observing the first rotation in a 321 sequence
+        // 当我们观测到第一次旋转是321顺序时，计算观测雅可比矩阵（注:雅可比矩阵的代码有mathlab脚本生成，具体见InertialNavEKF/calH_YAW321.c)
         float t2 = q0*q0;
         float t3 = q1*q1;
         float t4 = q2*q2;
@@ -825,11 +826,13 @@ void NavEKF2_core::fuseEulerYaw()
         H_YAW[2] = t14*(t15*(t2-t3+t4-t5)+t9*t10*(t7-t8));
 
         // calculate predicted and measured yaw angle
+        // 计算预测和量测yaw角
         Vector3f euler321;
         stateStruct.quat.to_euler(euler321.x, euler321.y, euler321.z);
         predicted_yaw = euler321.z;
         if (use_compass() && yawAlignComplete && magStateInitComplete) {
             // Use measured mag components rotated into earth frame to measure yaw
+            // 使用测量到的地磁数据旋转至地球坐标系来测量yaw
             Tbn_zeroYaw.from_euler(euler321.x, euler321.y, 0.0f);
             Vector3f magMeasNED = Tbn_zeroYaw*magDataDelayed.mag;
             measured_yaw = wrap_PI(-atan2f(magMeasNED.y, magMeasNED.x) + _ahrs->get_compass()->get_declination());
@@ -893,9 +896,11 @@ void NavEKF2_core::fuseEulerYaw()
     float innovation = wrap_PI(predicted_yaw - measured_yaw);
 
     // Copy raw value to output variable used for data logging
+    // 复制原始数据到输出变量，用于记录日志
     innovYaw = innovation;
 
     // Calculate innovation variance and Kalman gains, taking advantage of the fact that only the first 3 elements in H are non zero
+    // 计算新息协方差和卡尔曼增益，利用H中只有前3个元素非零的事实
     float PH[3];
     float varInnov = R_YAW;
     for (uint8_t rowIndex=0; rowIndex<=2; rowIndex++) {
@@ -913,6 +918,8 @@ void NavEKF2_core::fuseEulerYaw()
     } else {
         // the calculation is badly conditioned, so we cannot perform fusion on this step
         // we reset the covariance matrix and try again next measurement
+        // 计算条件很差，因此我们无法在此步骤中执行融合
+		// 我们重置协方差矩阵，然后再次尝试下一次测量
         CovarianceInit();
         // output numerical health status
         faultStatus.bad_yaw = true;
@@ -932,10 +939,13 @@ void NavEKF2_core::fuseEulerYaw()
     yawTestRatio = sq(innovation) / (sq(MAX(0.01f * (float)frontend->_yawInnovGate, 1.0f)) * varInnov);
 
     // Declare the magnetometer unhealthy if the innovation test fails
+    // 如果新息测试失败，则宣称磁力计不健康
     if (yawTestRatio > 1.0f) {
         magHealth = false;
         // On the ground a large innovation could be due to large initial gyro bias or magnetic interference from nearby objects
         // If we are flying, then it is more likely due to a magnetometer fault and we should not fuse the data
+        // 在地面上时，一个大的由于大的新息可能是由于大的初始陀螺偏置或者来自附近物体的磁干扰
+        // 如果在飞行，那么更有可能是由于磁力计故障，我们不应该融合此数据
         if (inFlight) {
             return;
         }
@@ -944,6 +954,7 @@ void NavEKF2_core::fuseEulerYaw()
     }
 
     // limit the innovation so that initial corrections are not too large
+    // 限制新息，使初始修正不要太大
     if (innovation > 0.5f) {
         innovation = 0.5f;
     } else if (innovation < -0.5f) {
@@ -952,6 +963,7 @@ void NavEKF2_core::fuseEulerYaw()
 
     // correct the covariance using P = P - K*H*P taking advantage of the fact that only the first 3 elements in H are non zero
     // calculate K*H*P
+    // 利用H中只有前三个元素不为零的事实，使用P = P - K*H*P校正协方差
     for (uint8_t row = 0; row <= stateIndexLim; row++) {
         for (uint8_t column = 0; column <= 2; column++) {
             KH[row][column] = Kfusion[row] * H_YAW[column];
@@ -967,6 +979,7 @@ void NavEKF2_core::fuseEulerYaw()
     }
 
     // Check that we are not going to drive any variances negative and skip the update if so
+    // 检查我们是否不会将任何方差设为负值，如果是，请跳过更新
     bool healthyFusion = true;
     for (uint8_t i= 0; i<=stateIndexLim; i++) {
         if (KHP[i][i] > P[i][i]) {
@@ -995,6 +1008,7 @@ void NavEKF2_core::fuseEulerYaw()
 
         // the first 3 states represent the angular misalignment vector. This is
         // is used to correct the estimated quaternion on the current time step
+        // 前3个状态代表角度失准矢量。这用于校正当前时间步长上的估计四元数
         stateStruct.quat.rotate(stateStruct.angErr);
 
         // record fusion event
@@ -1140,9 +1154,11 @@ void NavEKF2_core::FuseDeclination(float declErr)
 ********************************************************/
 
 // align the NE earth magnetic field states with the published declination
+// 将东北地磁场状态与公布的磁偏角对齐
 void NavEKF2_core::alignMagStateDeclination()
 {
     // don't do this if we already have a learned magnetic field
+    // 如果我们已经掌握了磁场，就不要这样做
     if (magFieldLearned) {
         return;
     }
@@ -1151,6 +1167,7 @@ void NavEKF2_core::alignMagStateDeclination()
     float magDecAng = use_compass() ? _ahrs->get_compass()->get_declination() : 0;
 
     // rotate the NE values so that the declination matches the published value
+    // 旋转东北角值，使磁偏角与发布值相匹配
     Vector3f initMagNED = stateStruct.earth_magfield;
     float magLengthNE = norm(initMagNED.x,initMagNED.y);
     stateStruct.earth_magfield.x = magLengthNE * cosf(magDecAng);
@@ -1158,6 +1175,7 @@ void NavEKF2_core::alignMagStateDeclination()
 
     if (!inhibitMagStates) {
         // zero the corresponding state covariances if magnetic field state learning is active
+        // 如果磁场状态学习有效，则归零相应的状态协方差
         float var_16 = P[16][16];
         float var_17 = P[17][17];
         zeroRows(P,16,17);
@@ -1167,6 +1185,7 @@ void NavEKF2_core::alignMagStateDeclination()
 
         // fuse the declination angle to establish covariances and prevent large swings in declination
         // during initial fusion
+        // 融合磁偏角，以建立协方差并防止初始融合期间磁偏角的大幅度摆动
         FuseDeclination(0.1f);
 
     }
