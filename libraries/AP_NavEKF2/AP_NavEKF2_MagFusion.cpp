@@ -151,13 +151,14 @@ void NavEKF2_core::controlMagYawReset()
 
         } else if (magYawResetRequest || magStateResetRequest) {
             // get the euler angles from the current state estimate
-            //从当前状态估计中获取欧拉角
+            // 从当前状态估计中获取欧拉角
             Vector3f eulerAngles;
             stateStruct.quat.to_euler(eulerAngles.x, eulerAngles.y, eulerAngles.z);
 
             // Use the Euler angles and magnetometer measurement to update the magnetic field states
             // and get an updated quaternion
-            //使用欧拉角和磁力计测量来更新磁场状态，并获得更新的四元数
+            // 使用欧拉角和磁力计测量来更新磁场状态，并获得更新的四元数
+            // 注意：
             Quaternion newQuat = calcQuatAndFieldStates(eulerAngles.x, eulerAngles.y);
 
             if (magYawResetRequest) {
@@ -275,12 +276,16 @@ void NavEKF2_core::SelectMagFusion()
 
     // clear the flag that lets other processes know that the expensive magnetometer fusion operation has been perfomred on that time step
     // used for load levelling
+    // 清除标志，让其他进程知道昂贵的磁强计融合操作已在该时间步骤执行
+    // 用于负载平衡
     magFusePerformed = false;
 
     // check for and read new magnetometer measurements
     readMagData();
 
     // If we are using the compass and the magnetometer has been unhealthy for too long we declare a timeout
+    // 如果我们使用指南针，磁强计太长时间不健康，我们宣布超时
+    
     if (magHealth) {
         magTimeout = false;
         lastHealthyMagTime_ms = imuSampleTime_ms;
@@ -292,15 +297,18 @@ void NavEKF2_core::SelectMagFusion()
     magDataToFuse = storedMag.recall(magDataDelayed,imuDataDelayed.time_ms);
 
     // Control reset of yaw and magnetic field states if we are using compass data
+    // 注意：使用磁罗盘使，若果磁力计数据健康，则在每次融时，都执行controlMagYawReset()
     if (magDataToFuse && use_compass()) {
         controlMagYawReset();
     }
 
     // determine if conditions are right to start a new fusion cycle
     // wait until the EKF time horizon catches up with the measurement
+    // 确定开始新融合周期的条件是否正确，等待EKF时间范围赶上测量
     bool dataReady = (magDataToFuse && statesInitialised && use_compass() && yawAlignComplete);
     if (dataReady) {
         // use the simple method of declination to maintain heading if we cannot use the magnetic field states
+        // 如果不能使用磁场状态，使用磁偏角的简单方法来保持航向
         if(inhibitMagStates || magStateResetRequest || !magStateInitComplete) {
             fuseEulerYaw();
             // zero the test ratio output from the inactive 3-axis magnetometer fusion
@@ -308,15 +316,18 @@ void NavEKF2_core::SelectMagFusion()
         } else {
             // if we are not doing aiding with earth relative observations (eg GPS) then the declination is
             // maintained by fusing declination as a synthesised observation
+            // 如果没有使用地球相对观测辅助（如GPS），磁偏角是通过融合磁偏角作为综合观测来保持的
             if (PV_AidingMode != AID_ABSOLUTE) {
                 FuseDeclination(0.34f);
             }
             // fuse the three magnetometer componenents sequentially
+            // 贯序融合三个磁力计量
             for (mag_state.obsIndex = 0; mag_state.obsIndex <= 2; mag_state.obsIndex++) {
                 hal.util->perf_begin(_perf_test[0]);
                 FuseMagnetometer();
                 hal.util->perf_end(_perf_test[0]);
                 // don't continue fusion if unhealthy
+                // 如果不健康，不要继续融合
                 if (!magHealth) {
                     break;
                 }
@@ -328,6 +339,7 @@ void NavEKF2_core::SelectMagFusion()
 
     // If we have no magnetometer and are on the ground, fuse in a synthetic heading measurement to prevent the
     // filter covariances from becoming badly conditioned
+    // 如果我们没有磁力计并且在地面上，融合合成航向测量，以防止滤波器协方差变得不良
     if (!use_compass()) {
         if (onGround && (imuSampleTime_ms - lastYawTime_ms > 1000)) {
             fuseEulerYaw();
@@ -338,6 +350,7 @@ void NavEKF2_core::SelectMagFusion()
 
     // If the final yaw reset has been performed and the state variances are sufficiently low
     // record that the earth field has been learned.
+    // 如果已经执行了最终偏航复位，并且状态变化足够低，则记录地球磁场已被学习。
     if (!magFieldLearned && finalInflightMagInit) {
         magFieldLearned = (P[16][16] < sq(0.01f)) && (P[17][17] < sq(0.01f)) && (P[18][18] < sq(0.01f));
     }
@@ -1012,7 +1025,7 @@ void NavEKF2_core::fuseEulerYaw()
     bool healthyFusion = true;
     for (uint8_t i= 0; i<=stateIndexLim; i++) {
         if (KHP[i][i] > P[i][i]) {
-            healthyFusion = false;
+            healthyFusion = false; // 任一个KHP>P，则healthyFusion=false
         }
     }
     if (healthyFusion) {
@@ -1057,6 +1070,7 @@ void NavEKF2_core::fuseEulerYaw()
  * https://github.com/priseborough/InertialNav/blob/master/derivations/RotationVectorAttitudeParameterisation/GenerateNavFilterEquations.m
  * This is used to prevent the declination of the EKF earth field states from drifting during operation without GPS
  * or some other absolute position or velocity reference
+ * 这用于防止在没有GPS或其他绝对位置或速度参考的情况下，EKF地球磁场状态的磁偏角在运行期间漂移
 */
 void NavEKF2_core::FuseDeclination(float declErr)
 {
@@ -1068,6 +1082,7 @@ void NavEKF2_core::FuseDeclination(float declErr)
     float magE = stateStruct.earth_magfield.y;
 
     // prevent bad earth field states from causing numerical errors or exceptions
+    ////防止坏的地球磁场状态导致数值错误或异常
     if (magN < 1e-3f) {
         return;
     }
@@ -1139,6 +1154,7 @@ void NavEKF2_core::FuseDeclination(float declErr)
     }
 
     // Check that we are not going to drive any variances negative and skip the update if so
+    // 检查我们是否不会将任何差异变为负值，如果是，请跳过更新
     bool healthyFusion = true;
     for (uint8_t i= 0; i<=stateIndexLim; i++) {
         if (KHP[i][i] > P[i][i]) {
