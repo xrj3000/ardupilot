@@ -168,31 +168,39 @@ void AP_AHRS_NavEKF::update_EKF2(void)
             update_trig();
 
             // Use the primary EKF to select the primary gyro
+            // 使用主EKF来选择主陀螺
             const int8_t primary_imu = EKF2.getPrimaryCoreIMUIndex();
 
             const AP_InertialSensor &_ins = AP::ins();
 
             // get gyro bias for primary EKF and change sign to give gyro drift
             // Note sign convention used by EKF is bias = measurement - truth
+            // 获取当前EKF陀螺偏置并且改变符号已给出陀螺漂移
+            // 注意EKF使用的符号转换为 bias = measurement - truth
             _gyro_drift.zero();
             EKF2.getGyroBias(-1,_gyro_drift);
             _gyro_drift = -_gyro_drift;
 
             // calculate corrected gyro estimate for get_gyro()
+            // 计算get_gyro()的校准的陀螺预估
             _gyro_estimate.zero();
             if (primary_imu == -1 || !_ins.get_gyro_health(primary_imu)) {
                 // the primary IMU is undefined so use an uncorrected default value from the INS library
+                // 主IMU没有定义，因此使用从INS库获取一个没有校准的默认值
                 _gyro_estimate = _ins.get_gyro();
             } else {
                 // use the same IMU as the primary EKF and correct for gyro drift
+                // 使用与主EKF相同的IMU，并校准陀螺漂移
                 _gyro_estimate = _ins.get_gyro(primary_imu) + _gyro_drift;
             }
 
             // get z accel bias estimate from active EKF (this is usually for the primary IMU)
+            // 从激活的EKF（这通常是主IMU）获取z轴加速度偏置预估
             float abias = 0;
             EKF2.getAccelZBias(-1,abias);
 
             // This EKF is currently using primary_imu, and abias applies to only that IMU
+            // 该EKF目前正在使用primary_imu，而abias仅适用于该惯性测量单元
             for (uint8_t i=0; i<_ins.get_accel_count(); i++) {
                 Vector3f accel = _ins.get_accel(i);
                 if (i == primary_imu) {

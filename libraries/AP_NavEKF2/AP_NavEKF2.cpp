@@ -695,6 +695,8 @@ void NavEKF2::UpdateFilter(void)
         // have already used more than 1/3 of the CPU budget for this
         // loop then suppress the prediction step. This allows
         // multiple EKF instances to cooperate on scheduling
+        // 如果我们没有超过3个IMU帧，并且我们已经为此循环使用了超过1/3的中央处理器预算，
+        // 则抑制预测步骤。这允许多个EKF实例在调度上合作
         if (core[i].getFramesSincePredict() < (_framesPerPrediction+3) &&
             (AP_HAL::micros() - ins.get_last_update_usec()) > _frameTimeUsec/3) {
             statePredictEnabled[i] = false;
@@ -707,6 +709,8 @@ void NavEKF2::UpdateFilter(void)
     // If the current core selected has a bad error score or is unhealthy, switch to a healthy core with the lowest fault score
     // Don't start running the check until the primary core has started returned healthy for at least 10 seconds to avoid switching
     // due to initial alignment fluctuations and race conditions
+    // 如果当前选择的内核错误分数不佳或不健康，请切换到故障分数最低的健康内核
+	// 在主内核开始健康恢复至少10秒钟之前，不要开始运行检查，以避免切换/由于初始对准波动和竞争条件
     if (!runCoreSelection) {
         static uint64_t lastUnhealthyTime_us = 0;
         if (!core[primary].healthy() || lastUnhealthyTime_us == 0) {
@@ -722,11 +726,14 @@ void NavEKF2::UpdateFilter(void)
 
             if (coreIndex != primary) {
                 // an alternative core is available for selection only if healthy and if states have been updated on this time step
+                // 当且仅当一个核健康并且在当前时间步骤内已经被更新，可作为可选的可用的核
                 bool altCoreAvailable = core[coreIndex].healthy() && statePredictEnabled[coreIndex];
 
                 // If the primary core is unhealthy and another core is available, then switch now
                 // If the primary core is still healthy,then switching is optional and will only be done if
                 // a core with a significantly lower error score can be found
+                // 如果主核不健康，而另一个内核可用，则立即切换
+                // 如果主内核仍然健康，那么切换是可选的，并且只有在能够找到错误分数明显较低的内核时才会进行
                 float altErrorScore = core[coreIndex].errorScore();
                 if (altCoreAvailable && (!core[primary].healthy() || altErrorScore < lowestErrorScore)) {
                     newPrimaryIndex = coreIndex;
@@ -735,6 +742,7 @@ void NavEKF2::UpdateFilter(void)
             }
         }
         // update the yaw and position reset data to capture changes due to the lane switch
+        // 更新偏航和位置重置数据，以捕捉车道开关引起的变化
         if (newPrimaryIndex != primary) {
             updateLaneSwitchYawResetData(newPrimaryIndex, primary);
             updateLaneSwitchPosResetData(newPrimaryIndex, primary);
