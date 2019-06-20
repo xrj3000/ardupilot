@@ -14,6 +14,7 @@ extern const AP_HAL::HAL& hal;
 
 
 // Control filter mode transitions
+//控制滤波器模式转换
 void NavEKF2_core::controlFilterModes()
 {
     // Determine motor arm status
@@ -21,21 +22,27 @@ void NavEKF2_core::controlFilterModes()
     motorsArmed = hal.util->get_soft_armed();
     if (motorsArmed && !prevMotorsArmed) {
         // set the time at which we arm to assist with checks
+        // 设置
         timeAtArming_ms =  imuSampleTime_ms;
     }
 
     // Detect if we are in flight on or ground
+    // 检测是否在飞行或在地面上
     detectFlight();
 
     // Determine if learning of wind and magnetic field will be enabled and set corresponding indexing limits to
     // avoid unnecessary operations
+    //确定是否能够学习风和磁场，并设置相应的索引限制，以避免不必要的操作
     setWindMagStateLearningMode();
 
     // Check the alignmnent status of the tilt and yaw attitude
     // Used during initial bootstrap alignment of the filter
+    // 检查倾斜和偏航姿态的对准状态
+	// 在滤波器初始捷联校准期间使用
     checkAttitudeAlignmentStatus();
 
     // Set the type of inertial navigation aiding used
+    // 设置所用惯性导航辅助的类型
     setAidingMode();
 
 }
@@ -157,16 +164,20 @@ void NavEKF2_core::setWindMagStateLearningMode()
 void NavEKF2_core::setAidingMode()
 {
     // Save the previous status so we can detect when it has changed
+    // 保存当前状态，以便我们可以检测它何时发生了变化
     PV_AidingModePrev = PV_AidingMode;
 
     // Determine if we should change aiding mode
+    // 检测我们是否应该改变辅助模式
     switch (PV_AidingMode) {
     case AID_NONE: {
         // Don't allow filter to start position or velocity aiding until the tilt and yaw alignment is complete
         // and IMU gyro bias estimates have stabilised
+        // 在倾斜和偏航对准完成且惯性测量单元陀螺仪偏置估计稳定之前，不要让滤波器开始位置或速度辅助
         bool filterIsStable = tiltAlignComplete && yawAlignComplete && checkGyroCalStatus();
         // If GPS usage has been prohiited then we use flow aiding provided optical flow data is present
         // GPS aiding is the preferred option unless excluded by the user
+        // 如果GPS的使用已经得禁止，那么如果光流数据存在，我们将使用光流辅助，除非用户排除在外，否则GPS辅助是首选选项
         bool canUseGPS = ((frontend->_fusionModeGPS) != 3 && readyToUseGPS() && filterIsStable && !gpsInhibit);
         bool canUseRangeBeacon = readyToUseRangeBeacon() && filterIsStable;
         bool canUseExtNav = readyToUseExtNav();
@@ -180,11 +191,15 @@ void NavEKF2_core::setAidingMode()
 
     case AID_RELATIVE: {
         // Check if the optical flow sensor has timed out
+        // 检查光流传感器是否超时
         bool flowSensorTimeout = ((imuSampleTime_ms - flowValidMeaTime_ms) > 5000);
         // Check if the fusion has timed out (flow measurements have been rejected for too long)
+        //检查融合是否超时(光流测量值被拒绝太久)
         bool flowFusionTimeout = ((imuSampleTime_ms - prevFlowFuseTime_ms) > 5000);
         // Enable switch to absolute position mode if GPS is available
         // If GPS is not available and flow fusion has timed out, then fall-back to no-aiding
+        // 使能切换至绝对位置模式如果GPS可用
+        // 如果GPS不可用并且光流融合超时，然后回退至无辅助
         if((frontend->_fusionModeGPS) != 3 && readyToUseGPS() && !gpsInhibit) {
             PV_AidingMode = AID_ABSOLUTE;
         } else if (flowSensorTimeout || flowFusionTimeout) {
@@ -195,6 +210,7 @@ void NavEKF2_core::setAidingMode()
 
     case AID_ABSOLUTE: {
         // Find the minimum time without data required to trigger any check
+        // 找到触发任何检查所需的无数据的最短时间
         uint16_t minTestTime_ms = MIN(frontend->tiltDriftTimeMax_ms, MIN(frontend->posRetryTimeNoVel_ms,frontend->posRetryTimeUseVel_ms));
 
         // Check if optical flow data is being used
@@ -478,6 +494,12 @@ bool NavEKF2_core::checkGyroCalStatus(void)
 // Returns 0 if command rejected
 // Returns 1 if attitude, vertical velocity and vertical position will be provided
 // Returns 2 if attitude, 3D-velocity, vertical position and relative horizontal position will be provided
+// 命令EKF不要使用GPS
+// 此命令必须在解锁前发送
+// 每次飞行器加锁时，EKF都会忘记这个命令
+// 如果命令被拒绝，返回0
+// 如果将提供姿态、垂直速度和垂直位置，则返回1
+// 如果将提供姿态、三维速度、垂直位置和相对水平位置，则返回2
 uint8_t NavEKF2_core::setInhibitGPS(void)
 {
     if((PV_AidingMode == AID_ABSOLUTE) && motorsArmed) {
