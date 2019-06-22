@@ -156,7 +156,7 @@ void NavEKF2_core::getTiltError(float &ang) const
 // return the transformation matrix from XYZ (body) to NED axes
 void NavEKF2_core::getRotationBodyToNED(Matrix3f &mat) const
 {
-    outputDataNew.quat.rotation_matrix(mat);
+    outputDataNew.quat.rotation_matrix(mat);//  earth to body
     mat = mat * _ahrs->get_rotation_vehicle_body_to_autopilot_body();
 }
 

@@ -93,6 +93,7 @@ AP_AHRS_DCM::update(bool skip_ins_update)
     update_trig();
 
     // update AOA and SSA
+    // AOA(Angle of Attack),SSA(side slip angle)
     update_AOA_SSA();
 }
 
