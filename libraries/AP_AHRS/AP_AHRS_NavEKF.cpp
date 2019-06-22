@@ -82,6 +82,7 @@ void AP_AHRS_NavEKF::update(bool skip_ins_update)
 {
     // drop back to normal priority if we were boosted by the INS
     // calling delay_microseconds_boost()
+    // 如果我们通过INS启动，回退至正常优先级
     hal.scheduler->boost_end();
     
     // EKF1 is no longer supported - handle case where it is selected
@@ -120,6 +121,7 @@ void AP_AHRS_NavEKF::update(bool skip_ins_update)
 
     if (_view != nullptr) {
         // update optional alternative attitude view
+        // 更新可选的替代的姿态观察
         _view->update(skip_ins_update);
     }
 }
@@ -129,6 +131,8 @@ void AP_AHRS_NavEKF::update_DCM(bool skip_ins_update)
     // we need to restore the old DCM attitude values as these are
     // used internally in DCM to calculate error values for gyro drift
     // correction
+    // 我们需要恢复旧的DCM姿态值，
+    // 因为这些值在DCM变换内部用于计算陀螺漂移校正的误差值
     roll = _dcm_attitude.x;
     pitch = _dcm_attitude.y;
     yaw = _dcm_attitude.z;
@@ -137,6 +141,7 @@ void AP_AHRS_NavEKF::update_DCM(bool skip_ins_update)
     AP_AHRS_DCM::update(skip_ins_update);
 
     // keep DCM attitude available for get_secondary_attitude()
+    // 为get_secondary_attitude()保持DCM姿态可用
     _dcm_attitude(roll, pitch, yaw);
 }
 
@@ -144,10 +149,12 @@ void AP_AHRS_NavEKF::update_EKF2(void)
 {
     if (!_ekf2_started) {
         // wait 1 second for DCM to output a valid tilt error estimate
+        // 等待1秒，直到DCM输出一个可用的倾斜误差估计
         if (start_time_ms == 0) {
             start_time_ms = AP_HAL::millis();
         }
-        if (AP_HAL::millis() - start_time_ms > startup_delay_ms || _force_ekf) {
+		// startup_delay_ms = 1000，默认为1秒
+		if (AP_HAL::millis() - start_time_ms > startup_delay_ms || _force_ekf) {
 			_ekf2_started = EKF2.InitialiseFilter();
             if (_force_ekf) {
                 return;
@@ -206,6 +213,7 @@ void AP_AHRS_NavEKF::update_EKF2(void)
                 if (i == primary_imu) {
                     accel.z -= abias;
                 }
+				//(说明:此处的ef代表earth frame)
                 if (_ins.get_accel_health(i)) {
                     _accel_ef_ekf[i] = _dcm_matrix * get_rotation_autopilot_body_to_vehicle_body() * accel;
                 }
@@ -601,6 +609,8 @@ Vector2f AP_AHRS_NavEKF::groundspeed_vector(void)
 // set the EKF's origin location in 10e7 degrees.  This should only
 // be called when the EKF has no absolute position reference (i.e. GPS)
 // from which to decide the origin on its own
+// 将EKF的原点位置设置为10e7度。只有当EKF没有绝对的位置基准(即全球定位系统)
+// 来自行确定原点时，才应调用该函数
 bool AP_AHRS_NavEKF::set_origin(const Location &loc)
 {
     const bool ret2 = EKF2.setOriginLLH(loc);

@@ -321,31 +321,41 @@ void NavEKF2_core::setAidingMode()
 		switch (PV_AidingMode) {
         case AID_NONE:
             // We have ceased aiding
+            // 停止辅助
             gcs().send_text(MAV_SEVERITY_WARNING, "EKF2 IMU%u has stopped aiding",(unsigned)imu_index);
             // When not aiding, estimate orientation & height fusing synthetic constant position and zero velocity measurement to constrain tilt errors
+            // 在没有帮助的情况下，估计方位和高度，融合合成的恒定位置和零速度测量，以限制倾斜误差
             posTimeout = true;
             velTimeout = true;            
             // Reset the normalised innovation to avoid false failing bad fusion tests
+            // 重置规范化新息，以避免错误失败的不良融合测试 
             velTestRatio = 0.0f;
             posTestRatio = 0.0f;
              // store the current position to be used to keep reporting the last known position
+             // 存贮当前的位置，以用来保持报告最后知道的位置
             lastKnownPositionNE.x = stateStruct.position.x;
             lastKnownPositionNE.y = stateStruct.position.y;
             // initialise filtered altitude used to provide a takeoff reference to current baro on disarm
             // this reduces the time required for the baro noise filter to settle before the filtered baro data can be used
+            // 初始化滤波的高度,  用于提供加锁时当前气压的起飞参考
+            // //这减少了baro噪声滤波器在使用滤波后的baro数据之前建立所需的时间
             meaHgtAtTakeOff = baroDataDelayed.hgt;
             // reset the vertical position state to faster recover from baro errors experienced during touchdown
-            stateStruct.position.z = -meaHgtAtTakeOff;
+            // 重置垂直位置状态，以便更快地从着陆时遇到的气压误差中恢复
+			stateStruct.position.z = -meaHgtAtTakeOff;
             break;
 
         case AID_RELATIVE:
             // We have commenced aiding, but GPS usage has been prohibited so use optical flow only
+            // 我们已经开始辅助，但GPS被禁止，所以我们只使用光流
             gcs().send_text(MAV_SEVERITY_INFO, "EKF2 IMU%u is using optical flow",(unsigned)imu_index);
             posTimeout = true;
             velTimeout = true;
             // Reset the last valid flow measurement time
+            // 重置最后可用光流量测的时间
             flowValidMeaTime_ms = imuSampleTime_ms;
             // Reset the last valid flow fusion time
+            // 重置最后可用光流时间
             prevFlowFuseTime_ms = imuSampleTime_ms;
             break;
 
@@ -354,30 +364,36 @@ void NavEKF2_core::setAidingMode()
             bool canUseRangeBeacon = readyToUseRangeBeacon();
             bool canUseExtNav = readyToUseExtNav();
             // We have commenced aiding and GPS usage is allowed
+            // 我们已经开始辅助并且GPS允许被使用
             if (canUseGPS) {
                 gcs().send_text(MAV_SEVERITY_INFO, "EKF2 IMU%u is using GPS",(unsigned)imu_index);
             }
             posTimeout = false;
             velTimeout = false;
             // We have commenced aiding and range beacon usage is allowed
+            // 已经开始辅助并且距离信标被允许使用
             if (canUseRangeBeacon) {
                 gcs().send_text(MAV_SEVERITY_INFO, "EKF2 IMU%u is using range beacons",(unsigned)imu_index);
                 gcs().send_text(MAV_SEVERITY_INFO, "EKF2 IMU%u initial pos NE = %3.1f,%3.1f (m)",(unsigned)imu_index,(double)receiverPos.x,(double)receiverPos.y);
                 gcs().send_text(MAV_SEVERITY_INFO, "EKF2 IMU%u initial beacon pos D offset = %3.1f (m)",(unsigned)imu_index,(double)bcnPosOffset);
             }
             // We have commenced aiding and external nav usage is allowed
+            // 我们已经开始辅助并且外部导航被允许使用
             if (canUseExtNav) {
                 gcs().send_text(MAV_SEVERITY_INFO, "EKF2 IMU%u is using external nav data",(unsigned)imu_index);
                 gcs().send_text(MAV_SEVERITY_INFO, "EKF2 IMU%u initial pos NED = %3.1f,%3.1f,%3.1f (m)",(unsigned)imu_index,(double)extNavDataDelayed.pos.x,(double)extNavDataDelayed.pos.y,(double)extNavDataDelayed.pos.z);
                 // handle yaw reset as special case
+                // 特殊条件下，处理偏航复位
                 extNavYawResetRequest = true;
                 controlMagYawReset();
                 // handle height reset as special case
+                // 在特殊条件下处理高度复位
                 hgtMea = -extNavDataDelayed.pos.z;
                 posDownObsNoise = sq(constrain_float(extNavDataDelayed.posErr, 0.1f, 10.0f));
                 ResetHeight();
             }
             // reset the last fusion accepted times to prevent unwanted activation of timeout logic
+            // 重置最后一次融合接受时间，以防止激活不必要的超时逻辑
             lastPosPassTime_ms = imuSampleTime_ms;
             lastVelPassTime_ms = imuSampleTime_ms;
             lastRngBcnPassTime_ms = imuSampleTime_ms;
@@ -389,6 +405,7 @@ void NavEKF2_core::setAidingMode()
         }
 
         // Always reset the position and velocity when changing mode
+        // 当模式改变是，总是重置位置和速度
         ResetVelocity();
         ResetPosition();
     }
@@ -474,10 +491,12 @@ bool NavEKF2_core::assume_zero_sideslip(void) const
     // we don't assume zero sideslip for ground vehicles as EKF could
     // be quite sensitive to a rapid spin of the ground vehicle if
     // traction is lost
+    // 对于地面载体，我们不假设零侧滑，因为如果失去牵引力，EKF对地面载体的快速旋转非常敏感
     return _ahrs->get_fly_forward() && _ahrs->get_vehicle_class() != AHRS_VEHICLE_GROUND;
 }
 
 // set the LLH location of the filters NED origin
+// 设置滤波器NED(东北天)初始位置的LLH(Longitude, Latitude and height精度维度和高度)
 bool NavEKF2_core::setOriginLLH(const Location &loc)
 {
     if (PV_AidingMode == AID_ABSOLUTE && !extNavUsedForPos) {
@@ -486,28 +505,34 @@ bool NavEKF2_core::setOriginLLH(const Location &loc)
     EKF_origin = loc;
     ekfGpsRefHgt = (double)0.01 * (double)EKF_origin.alt;
     // define Earth rotation vector in the NED navigation frame at the origin
+    // 在原点的NED导航框架中定义地球旋转矢量
     calcEarthRateNED(earthRateNED, _ahrs->get_home().lat);
     validOrigin = true;
     return true;
 }
 
 // Set the NED origin to be used until the next filter reset
+// 设置使用的NED原点直到下一次滤波器复位
 void NavEKF2_core::setOrigin()
 {
     // assume origin at current GPS location (no averaging)
+    // 假设原点在当前GPS位置（无操作）
     EKF_origin = AP::gps().location();
     // if flying, correct for height change from takeoff so that the origin is at field elevation
+    // 如果在飞行，校正起飞时的高度变化，使原点位于场地标高处
     if (inFlight) {
         EKF_origin.alt += (int32_t)(100.0f * stateStruct.position.z);
     }
     ekfGpsRefHgt = (double)0.01 * (double)EKF_origin.alt;
     // define Earth rotation vector in the NED navigation frame at the origin
+    // 在原点的NED导航框架中定义地球旋转矢量
     calcEarthRateNED(earthRateNED, _ahrs->get_home().lat);
     validOrigin = true;
     gcs().send_text(MAV_SEVERITY_INFO, "EKF2 IMU%u Origin set to GPS",(unsigned)imu_index);
 }
 
 // record a yaw reset event
+// 记录偏航复位事件
 void NavEKF2_core::recordYawReset()
 {
     yawAlignComplete = true;
@@ -535,6 +560,12 @@ bool NavEKF2_core::checkGyroCalStatus(void)
 // Returns 0 if command rejected
 // Returns 1 if attitude, vertical velocity and vertical position will be provided
 // Returns 2 if attitude, 3D-velocity, vertical position and relative horizontal position will be provided
+// 命令EKF不使用GPS
+// 此命令必须先于解锁命令发送
+// 每次载体加锁时，EKF都会忘掉这个命令
+// 如果命令被拒绝，返回0
+// 如果提供姿态，垂直速度和垂直位置，则返回1
+// 如果提供姿态，3D速度，垂直位置和相对水平位置，则返回2
 uint8_t NavEKF2_core::setInhibitGPS(void)
 {
     if((PV_AidingMode == AID_ABSOLUTE) && motorsArmed) {
@@ -544,6 +575,7 @@ uint8_t NavEKF2_core::setInhibitGPS(void)
         return 1;
     }
     // option 2 is not yet implemented as it requires a deeper integration of optical flow and GPS operation
+    //选项2尚未实施，因为它需要更深层次地集成光流和全球定位系统操作
 }
 
 // Update the filter status
