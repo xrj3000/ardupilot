@@ -148,7 +148,7 @@ void AP_AHRS_NavEKF::update_EKF2(void)
             start_time_ms = AP_HAL::millis();
         }
         if (AP_HAL::millis() - start_time_ms > startup_delay_ms || _force_ekf) {
-            _ekf2_started = EKF2.InitialiseFilter();
+			_ekf2_started = EKF2.InitialiseFilter();
             if (_force_ekf) {
                 return;
             }

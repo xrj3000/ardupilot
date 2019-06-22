@@ -1345,6 +1345,7 @@ void NavEKF2_core::StoreQuatReset()
 }
 
 // Rotate the stored output quaternion history through a quaternion rotation
+// 通过一个四元数旋转旋转存储的输出四元数历史值
 void NavEKF2_core::StoreQuatRotate(Quaternion deltaQuat)
 {
     outputDataNew.quat = outputDataNew.quat*deltaQuat;

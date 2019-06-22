@@ -276,7 +276,7 @@ void NavEKF2_core::SelectMagFusion()
 
     // clear the flag that lets other processes know that the expensive magnetometer fusion operation has been perfomred on that time step
     // used for load levelling
-    // 清除标志，让其他进程知道昂贵的磁强计融合操作已在该时间步骤执行
+    // 清除标志，让其他进程知道耗时的磁强计融合操作已在该时间步骤执行
     // 用于负载平衡
     magFusePerformed = false;
 
@@ -389,7 +389,7 @@ void NavEKF2_core::FuseMagnetometer()
     ftype &magXbias = mag_state.magXbias;
     ftype &magYbias = mag_state.magYbias;
     ftype &magZbias = mag_state.magZbias;
-    uint8_t &obsIndex = mag_state.obsIndex;
+    uint8_t &obsIndex = mag_state.obsIndex; // 注意，这里是取址，后面的赋值会改变mag_state.obsIndex的值
     Matrix3f &DCM = mag_state.DCM;
     Vector3f &MagPred = mag_state.MagPred;
     ftype &R_MAG = mag_state.R_MAG;
@@ -409,7 +409,7 @@ void NavEKF2_core::FuseMagnetometer()
     // associated with sequential fusion
     // calculate observation jacobians and Kalman gains
     // 执行磁力计测量的顺序融合。
-	//这假设不同分量中的误差是不相关的，这是不正确的，但是在没有协方差数据的情况下，
+	// 这假设不同分量中的误差是不相关的，这是不正确的，但是在没有协方差数据的情况下，
 	// 拟合是我们唯一可以做的假设，因此我们不妨利用与顺序融合相关的计算效率来计算观测雅可比数和卡尔曼增益
     if (obsIndex == 0)
     {
@@ -450,6 +450,7 @@ void NavEKF2_core::FuseMagnetometer()
         }
 
         // scale magnetometer observation error with total angular rate to allow for timing errors
+        // 用总角速度标定磁力计观测误差，以考虑定时误差(难点)
         R_MAG = sq(constrain_float(frontend->_magNoise, 0.01f, 0.5f)) + sq(frontend->magVarRateScale*delAngCorrected.length() / imuDataDelayed.delAngDT);
 
         // calculate common expressions used to calculate observation jacobians an innovation variance for each component
@@ -472,7 +473,7 @@ void NavEKF2_core::FuseMagnetometer()
             // the calculation is badly conditioned, so we cannot perform fusion on this step
             // we reset the covariance matrix and try again next measurement
             CovarianceInit();
-            obsIndex = 1;
+            obsIndex = 1;// 说明，这里不确定是否为bug，若obsIndex=1，在上层for循环中obsIndex=2后再执行FuseMagnetometer(),所以永远不会执行obsIndex=1的情况
             faultStatus.bad_xmag = true;
 
             hal.util->perf_end(_perf_test[2]);
