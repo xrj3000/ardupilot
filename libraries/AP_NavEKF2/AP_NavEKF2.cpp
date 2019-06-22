@@ -755,6 +755,7 @@ void NavEKF2::UpdateFilter(void)
 }
 
 // Check basic filter health metrics and return a consolidated health status
+// 检查基本过滤器运行状况指标，并返回整合的运行状况
 bool NavEKF2::healthy(void) const
 {
     if (!core) {
@@ -765,6 +766,8 @@ bool NavEKF2::healthy(void) const
 
 // returns the index of the primary core
 // return -1 if no primary core selected
+// 返回主内核的索引
+// 如果没有选择主内核，返回-1
 int8_t NavEKF2::getPrimaryCoreIndex(void) const
 {
     if (!core) {
@@ -775,6 +778,8 @@ int8_t NavEKF2::getPrimaryCoreIndex(void) const
 
 // returns the index of the IMU of the primary core
 // return -1 if no primary core selected
+// 返回主内核的IMU索引
+// 如果没有选择主内核，返回-1
 int8_t NavEKF2::getPrimaryCoreIMUIndex(void) const
 {
     if (!core) {
@@ -786,6 +791,9 @@ int8_t NavEKF2::getPrimaryCoreIMUIndex(void) const
 // Write the last calculated NE position relative to the reference point (m).
 // If a calculated solution is not available, use the best available data and return false
 // If false returned, do not use for flight control
+// 写入最后计算的相对于参考点(m)的东北位置。
+// 如果计算的解决方案不可用，请使用最佳可用数据并返回false
+// 如果返回false，不要用于飞行控制
 bool NavEKF2::getPosNE(int8_t instance, Vector2f &posNE) const
 {
     if (instance < 0 || instance >= num_cores) instance = primary;
@@ -798,6 +806,9 @@ bool NavEKF2::getPosNE(int8_t instance, Vector2f &posNE) const
 // Write the last calculated D position relative to the reference point (m).
 // If a calculated solution is not available, use the best available data and return false
 // If false returned, do not use for flight control
+// 写入最后计算的相对于参考点(m)的三维位置。
+// 如果计算的解决方案不可用，请使用最佳可用数据并返回false
+// 如果返回false，不要用于飞行控制
 bool NavEKF2::getPosD(int8_t instance, float &posD) const
 {
     if (instance < 0 || instance >= num_cores) instance = primary;
@@ -808,6 +819,7 @@ bool NavEKF2::getPosD(int8_t instance, float &posD) const
 }
 
 // return NED velocity in m/s
+//返回NED速度，单位为米/秒
 void NavEKF2::getVelNED(int8_t instance, Vector3f &vel) const
 {
     if (instance < 0 || instance >= num_cores) instance = primary;
@@ -817,17 +829,20 @@ void NavEKF2::getVelNED(int8_t instance, Vector3f &vel) const
 }
 
 // Return the rate of change of vertical position in the down direction (dPosD/dt) in m/s
+// 以m/s为单位返回向下方向垂直位置的变化率(dPosD/dt)
 float NavEKF2::getPosDownDerivative(int8_t instance) const
 {
     if (instance < 0 || instance >= num_cores) instance = primary;
     // return the value calculated from a complementary filer applied to the EKF height and vertical acceleration
-    if (core) {
+	// 返回应用于EKF高度和垂直加速度的互补滤波器计算的值
+	if (core) {
         return core[instance].getPosDownDerivative();
     }
     return 0.0f;
 }
 
 // This returns the specific forces in the NED frame
+//这将返回NED框架中的特定力？
 void NavEKF2::getAccelNED(Vector3f &accelNED) const
 {
     if (core) {

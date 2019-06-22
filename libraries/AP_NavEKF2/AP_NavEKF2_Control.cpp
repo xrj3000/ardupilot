@@ -330,7 +330,7 @@ void NavEKF2_core::setAidingMode()
         }
 
         // Check if the loss of position accuracy has become critical
-        // 检查位置精度丢失是否已经变得重要
+        // 检查位置精度是否丢失已经变得重要
         bool posAidLossCritical = false;
         if (!posAiding ) {
             uint16_t maxLossTime_ms;
