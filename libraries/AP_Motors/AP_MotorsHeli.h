@@ -19,22 +19,16 @@
 #define AP_MOTORS_HELI_COLLECTIVE_MIN           1250
 #define AP_MOTORS_HELI_COLLECTIVE_MAX           1750
 #define AP_MOTORS_HELI_COLLECTIVE_MID           1500
-
-// default main rotor speed (ch8 out) as a number from 0 ~ 1000
-#define AP_MOTORS_HELI_RSC_SETPOINT             700
-
-// default main rotor critical speed
-#define AP_MOTORS_HELI_RSC_CRITICAL             500
-
-// RSC output defaults
-#define AP_MOTORS_HELI_RSC_IDLE_DEFAULT         0
-
-// default main rotor ramp up time in seconds
-#define AP_MOTORS_HELI_RSC_RAMP_TIME            1       // 1 second to ramp output to main rotor ESC to setpoint
-#define AP_MOTORS_HELI_RSC_RUNUP_TIME           10      // 10 seconds for rotor to reach full speed
+#define AP_MOTORS_HELI_COLLECTIVE_HOVER_DEFAULT 0.5f  // the estimated hover throttle, 0 ~ 1
+#define AP_MOTORS_HELI_COLLECTIVE_HOVER_TC      10.0f // time constant used to update estimated hover throttle, 0 ~ 1
+#define AP_MOTORS_HELI_COLLECTIVE_HOVER_MIN     0.3f  // minimum possible hover throttle
+#define AP_MOTORS_HELI_COLLECTIVE_HOVER_MAX     0.8f // maximum possible hover throttle
 
 // flybar types
 #define AP_MOTORS_HELI_NOFLYBAR                 0
+
+// rsc function output channels. 
+#define AP_MOTORS_HELI_RSC                      CH_8
 
 class AP_HeliControls;
 
@@ -45,7 +39,8 @@ public:
     /// Constructor
     AP_MotorsHeli( uint16_t         loop_rate,
                    uint16_t         speed_hz = AP_MOTORS_HELI_SPEED_DEFAULT) :
-        AP_Motors(loop_rate, speed_hz)
+        AP_Motors(loop_rate, speed_hz),
+        _main_rotor(SRV_Channel::k_heli_rsc, AP_MOTORS_HELI_RSC)
     {
         AP_Param::setup_object_defaults(this, var_info);
     };
@@ -83,11 +78,11 @@ public:
     // set_inverted_flight - enables/disables inverted flight
     void set_inverted_flight(bool inverted) { _heliflags.inverted_flight = inverted; }
 
-    // get_rsc_mode - gets the rotor speed control method (AP_MOTORS_HELI_RSC_MODE_CH8_PASSTHROUGH or AP_MOTORS_HELI_RSC_MODE_SETPOINT)
-    uint8_t get_rsc_mode() const { return _rsc_mode; }
+    // get_rsc_mode - gets the current rotor speed control method
+    uint8_t get_rsc_mode() const { return _main_rotor.get_control_mode(); }
 
     // get_rsc_setpoint - gets contents of _rsc_setpoint parameter (0~1)
-    float get_rsc_setpoint() const { return _rsc_setpoint * 0.001f; }
+    float get_rsc_setpoint() const { return _main_rotor._rsc_setpoint.get() * 0.01f; }
     
     // set_rpm - for rotor speed governor
     virtual void set_rpm(float rotor_rpm) = 0;
@@ -128,14 +123,39 @@ public:
     // supports_yaw_passthrough
     virtual bool supports_yaw_passthrough() const { return false; }
 
-    float get_throttle_hover() const override { return 0.5f; }
+    // update estimated throttle required to hover
+    void update_throttle_hover(float dt);
+    float get_throttle_hover() const override { return _collective_hover; }
+
+    // accessor to get the takeoff collective flag signifying that current collective is greater than collective required to indicate takeoff
+    bool get_takeoff_collective() const { return _heliflags.takeoff_collective; }
+
+    // accessor to get the takeoff collective flag signifying that current collective is greater than collective required to indicate takeoff
+    bool get_below_mid_collective() const { return _heliflags.below_mid_collective; }
 
     // support passing init_targets_on_arming flag to greater code
-    bool init_targets_on_arming() const { return _heliflags.init_targets_on_arming; }
+    bool init_targets_on_arming() const override { return _heliflags.init_targets_on_arming; }
 
-    void enable_rsc_parameters(void);
+    // set_in_autorotation - allows main code to set when aircraft is in autorotation.
+    void set_in_autorotation(bool autorotation) { _heliflags.in_autorotation = autorotation; }
 
+    // set_enable_bailout - allows main code to set when RSC can immediately ramp engine instantly
+    void set_enable_bailout(bool bailout) { _heliflags.enable_bailout = bailout; }
 
+    // return true if the servo test is still running/pending
+    bool servo_test_running() const { return _heliflags.servo_test_running; }
+
+    // set land complete flag
+    void set_land_complete(bool landed) { _heliflags.land_complete = landed; }
+    
+    // enum for heli optional features
+    enum class HeliOption {
+        USE_LEAKY_I                     = (1<<0),   // 1
+    };
+
+    // use leaking integrator management scheme
+    bool using_leaky_integrator() const { return heli_option(HeliOption::USE_LEAKY_I); }
+    
     // var_info for holding Parameter information
     static const struct AP_Param::GroupInfo var_info[];
 
@@ -151,13 +171,13 @@ protected:
         SERVO_CONTROL_MODE_MANUAL_OSCILLATE,
     };
 
-    RSCThrCrvParam   _rsc_thrcrv;
-    RSCGovParam      _rsc_gov;
-
     // output - sends commands to the motors
     void output_armed_stabilizing() override;
     void output_armed_zero_throttle();
     void output_disarmed();
+
+    // external objects we depend upon
+    AP_MotorsHeli_RSC   _main_rotor;            // main rotor
 
     // update_motor_controls - sends commands to motor controllers
     virtual void update_motor_control(RotorControlState state) = 0;
@@ -196,12 +216,35 @@ protected:
     // write to a swash servo. output value is pwm
     void rc_write_swash(uint8_t chan, float swash_in);
 
+    // save parameters as part of disarming
+    void save_params_on_disarm() override;
+
+    // Determines if _heli_options bit is set
+    bool heli_option(HeliOption opt) const;
+
+    // updates the takeoff collective flag indicating that current collective is greater than collective required to indicate takeoff.
+    void update_takeoff_collective_flag(float coll_out);
+
+    // enum values for HOVER_LEARN parameter
+    enum HoverLearn {
+        HOVER_LEARN_DISABLED = 0,
+        HOVER_LEARN_ONLY = 1,
+        HOVER_LEARN_AND_SAVE = 2
+    };
+
     // flags bitmask
     struct heliflags_type {
         uint8_t landing_collective      : 1;    // true if collective is setup for landing which has much higher minimum
         uint8_t rotor_runup_complete    : 1;    // true if the rotors have had enough time to wind up
         uint8_t inverted_flight         : 1;    // true for inverted flight
         uint8_t init_targets_on_arming  : 1;    // 0 if targets were initialized, 1 if targets were not initialized after arming
+        uint8_t save_rsc_mode           : 1;    // used to determine the rsc mode needs to be saved while disarmed
+        uint8_t in_autorotation         : 1;    // true if aircraft is in autorotation
+        uint8_t enable_bailout          : 1;    // true if allowing RSC to quickly ramp up engine
+        uint8_t servo_test_running      : 1;    // true if servo_test is running
+        uint8_t land_complete           : 1;    // true if aircraft is landed
+        uint8_t takeoff_collective      : 1;    // true if collective is above 30% between H_COL_MID and H_COL_MAX
+        uint8_t below_mid_collective    : 1;    // true if collective is below H_COL_MID
     } _heliflags;
 
     // parameters
@@ -210,18 +253,15 @@ protected:
     AP_Int16        _collective_max;            // Highest possible servo position for the swashplate
     AP_Int16        _collective_mid;            // Swash servo position corresponding to zero collective pitch (or zero lift for Asymmetrical blades)
     AP_Int8         _servo_mode;                // Pass radio inputs directly to servos during set-up through mission planner
-    AP_Int16        _rsc_setpoint;              // rotor speed when RSC mode is set to is enabled
-    AP_Int8         _rsc_mode;                  // Which main rotor ESC control mode is active
-    AP_Int8         _rsc_ramp_time;             // Time in seconds for the output to the main rotor's ESC to reach setpoint
-    AP_Int8         _rsc_runup_time;            // Time in seconds for the main rotor to reach full speed.  Must be longer than _rsc_ramp_time
-    AP_Int16        _rsc_critical;              // Rotor speed below which flight is not possible
-    AP_Int16        _rsc_idle_output;           // Rotor control output while at idle
-    AP_Int16        _rsc_slewrate;              // throttle slew rate (percentage per second)
     AP_Int8         _servo_test;                // sets number of cycles to test servo movement on bootup
+    AP_Float        _collective_hover;          // estimated collective required to hover throttle in the range 0 ~ 1
+    AP_Int8         _collective_hover_learn;    // enable/disabled hover collective learning
+    AP_Int8         _heli_options;              // bitmask for optional features
 
     // internal variables
     float           _collective_mid_pct = 0.0f;      // collective mid parameter value converted to 0 ~ 1 range
     uint8_t         _servo_test_cycle_counter = 0;   // number of test cycles left to run after bootup
 
     motor_frame_type _frame_type;
+    motor_frame_class _frame_class;
 };

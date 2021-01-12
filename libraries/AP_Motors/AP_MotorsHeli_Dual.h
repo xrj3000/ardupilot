@@ -2,8 +2,7 @@
 /// @brief  Motor control class for dual heli (tandem or transverse)
 /// @author Fredrik Hedberg
 
-#ifndef __AP_MOTORS_HELI_DUAL_H__
-#define __AP_MOTORS_HELI_DUAL_H__
+#pragma once
 
 #include <AP_Common/AP_Common.h>
 #include <AP_Math/AP_Math.h>
@@ -13,12 +12,10 @@
 #include "AP_MotorsHeli_RSC.h"
 #include "AP_MotorsHeli_Swash.h"
 
-// rsc function output channel
-#define AP_MOTORS_HELI_DUAL_RSC                     CH_8
-
 // tandem modes
 #define AP_MOTORS_HELI_DUAL_MODE_TANDEM                0 // tandem mode (rotors front and aft)
 #define AP_MOTORS_HELI_DUAL_MODE_TRANSVERSE            1 // transverse mode (rotors side by side)
+#define AP_MOTORS_HELI_DUAL_MODE_INTERMESHING          2 // intermeshing mode (rotors side by side)
 
 // tandem modes
 #define AP_MOTORS_HELI_DUAL_SWASH_AXIS_PITCH           0 // swashplate pitch tilt axis
@@ -42,8 +39,7 @@ public:
     // constructor
     AP_MotorsHeli_Dual(uint16_t loop_rate,
                        uint16_t speed_hz = AP_MOTORS_HELI_SPEED_DEFAULT) :
-        AP_MotorsHeli(loop_rate, speed_hz),
-        _rotor(SRV_Channel::k_heli_rsc, AP_MOTORS_HELI_DUAL_RSC)
+        AP_MotorsHeli(loop_rate, speed_hz)
     {
         AP_Param::setup_object_defaults(this, var_info);
     };
@@ -65,19 +61,19 @@ public:
     void set_desired_rotor_speed(float desired_speed) override;
 
     // get_estimated_rotor_speed - gets estimated rotor speed as a number from 0 ~ 1000
-    float get_main_rotor_speed() const  override { return _rotor.get_rotor_speed(); }
+    float get_main_rotor_speed() const  override { return _main_rotor.get_rotor_speed(); }
 
     // get_desired_rotor_speed - gets target rotor speed as a number from 0 ~ 1000
-    float get_desired_rotor_speed() const  override { return _rotor.get_rotor_speed(); }
+    float get_desired_rotor_speed() const  override { return _main_rotor.get_rotor_speed(); }
 
     // rotor_speed_above_critical - return true if rotor speed is above that critical for flight
-    bool rotor_speed_above_critical() const  override { return _rotor.get_rotor_speed() > _rotor.get_critical_speed(); }
+    bool rotor_speed_above_critical() const  override { return _main_rotor.get_rotor_speed() > _main_rotor.get_critical_speed(); }
     
     // get_governor_output
-    float get_governor_output() const override { return _rotor.get_governor_output(); }
+    float get_governor_output() const override { return _main_rotor.get_governor_output(); }
     
     // get_control_output
-    float get_control_output() const override { return _rotor.get_control_output(); }
+    float get_control_output() const override { return _main_rotor.get_control_output(); }
 
     // calculate_scalars - recalculates various scalars used
     void calculate_scalars() override;
@@ -118,7 +114,6 @@ protected:
     void move_actuators(float roll_out, float pitch_out, float coll_in, float yaw_out)  override;
 
     //  objects we depend upon
-    AP_MotorsHeli_RSC           _rotor;             // main rotor controller
     AP_MotorsHeli_Swash        _swashplate1;        // swashplate1
     AP_MotorsHeli_Swash        _swashplate2;        // swashplate2
 
@@ -138,9 +133,9 @@ protected:
     AP_Float        _dcp_scaler;                    // scaling factor applied to the differential-collective-pitch
     AP_Float        _dcp_yaw_effect;                // feed-forward compensation to automatically add yaw input when differential collective pitch is applied.
     AP_Float        _yaw_scaler;                    // scaling factor applied to the yaw mixing
+    AP_Float        _dcp_trim;                      // used to easily trim dcp axis
+    AP_Float        _yaw_rev_expo;                  // yaw reverser smoothing exponent, for intermeshing mode only.
 
     // internal variables
     float           _collective2_mid_pct = 0.0f;      // collective mid parameter value for rear swashplate converted to 0 ~ 1 range
 };
-
-#endif  // AP_MotorsHeli_Dual

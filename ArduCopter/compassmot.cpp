@@ -5,7 +5,7 @@
  */
 
 // setup_compassmot - sets compass's motor interference parameters
-MAV_RESULT Copter::mavlink_compassmot(mavlink_channel_t chan)
+MAV_RESULT Copter::mavlink_compassmot(const GCS_MAVLINK &gcs_chan)
 {
 #if FRAME_CONFIG == HELI_FRAME
     // compassmot not implemented for tradheli
@@ -32,8 +32,6 @@ MAV_RESULT Copter::mavlink_compassmot(mavlink_channel_t chan)
     } else {
         ap.compass_mot = true;
     }
-
-    GCS_MAVLINK_Copter &gcs_chan = gcs().chan(chan-MAVLINK_COMM_0);
 
     // check compass is enabled
     if (!AP::compass().enabled()) {
@@ -77,15 +75,17 @@ MAV_RESULT Copter::mavlink_compassmot(mavlink_channel_t chan)
     // disable cpu failsafe
     failsafe_disable();
 
+    float current;
+
     // default compensation type to use current if possible
-    if (battery.has_current()) {
+    if (battery.current_amps(current)) {
         comp_type = AP_COMPASS_MOT_COMP_CURRENT;
     } else {
         comp_type = AP_COMPASS_MOT_COMP_THROTTLE;
     }
 
     // send back initial ACK
-    mavlink_msg_command_ack_send(chan, MAV_CMD_PREFLIGHT_CALIBRATION,0);
+    mavlink_msg_command_ack_send(gcs_chan.get_chan(), MAV_CMD_PREFLIGHT_CALIBRATION,0);
 
     // flash leds
     AP_Notify::flags.esc_calibration = true;
@@ -125,6 +125,7 @@ MAV_RESULT Copter::mavlink_compassmot(mavlink_channel_t chan)
     init_rc_out();
     enable_motor_output();
     motors->armed(true);
+    hal.util->set_soft_armed(true);
 
     // initialise run time
     last_run_time = millis();
@@ -159,6 +160,11 @@ MAV_RESULT Copter::mavlink_compassmot(mavlink_channel_t chan)
         throttle_pct = (float)channel_throttle->get_control_in() / 1000.0f;
         throttle_pct = constrain_float(throttle_pct,0.0f,1.0f);
 
+        if (!battery.current_amps(current)) {
+            current = 0;
+        }
+        current_amps_max = MAX(current_amps_max, current);
+
         // if throttle is near zero, update base x,y,z values
         if (throttle_pct <= 0.0f) {
             for (uint8_t i=0; i<compass.get_count(); i++) {
@@ -184,11 +190,9 @@ MAV_RESULT Copter::mavlink_compassmot(mavlink_channel_t chan)
             } else {
                 // for each compass
                 for (uint8_t i=0; i<compass.get_count(); i++) {
-                    // current based compensation if more than 3amps being drawn
-                    motor_impact_scaled[i] = motor_impact[i] / battery.current_amps();
-
                     // adjust the motor compensation to negate the impact if drawing over 3amps
-                    if (battery.current_amps() >= 3.0f) {
+                    if (current >= 3.0f) {
+                        motor_impact_scaled[i] = motor_impact[i] / current;
                         motor_compensation[i] = motor_compensation[i] * 0.99f - motor_impact_scaled[i] * 0.01f;
                         updated = true;
                     }
@@ -208,26 +212,26 @@ MAV_RESULT Copter::mavlink_compassmot(mavlink_channel_t chan)
                 }
             }
 
-            // record maximum throttle and current
+            // record maximum throttle
             throttle_pct_max = MAX(throttle_pct_max, throttle_pct);
-            current_amps_max = MAX(current_amps_max, battery.current_amps());
         }
 
         if (AP_HAL::millis() - last_send_time > 500) {
             last_send_time = AP_HAL::millis();
-            mavlink_msg_compassmot_status_send(chan, 
+            mavlink_msg_compassmot_status_send(gcs_chan.get_chan(),
                                                channel_throttle->get_control_in(),
-                                               battery.current_amps(),
-                                               interference_pct[compass.get_primary()],
-                                               motor_compensation[compass.get_primary()].x,
-                                               motor_compensation[compass.get_primary()].y,
-                                               motor_compensation[compass.get_primary()].z);
+                                               current,
+                                               interference_pct[0],
+                                               motor_compensation[0].x,
+                                               motor_compensation[0].y,
+                                               motor_compensation[0].z);
         }
     }
 
     // stop motors
     motors->output_min();
     motors->armed(false);
+    hal.util->set_soft_armed(false);
 
     // set and save motor compensation
     if (updated) {
@@ -243,9 +247,6 @@ MAV_RESULT Copter::mavlink_compassmot(mavlink_channel_t chan)
         gcs_chan.send_text(MAV_SEVERITY_NOTICE, "Failed");
         compass.motor_compensation_type(AP_COMPASS_MOT_COMP_DISABLED);
     }
-
-    // display new motor offsets and save
-    report_compass();
 
     // turn off notify leds
     AP_Notify::flags.esc_calibration = false;

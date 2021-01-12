@@ -29,14 +29,14 @@ namespace SITL {
  */
 class Plane : public Aircraft {
 public:
-    Plane(const char *home_str, const char *frame_str);
+    Plane(const char *frame_str);
 
     /* update model by one time step */
     virtual void update(const struct sitl_input &input) override;
 
     /* static object creator */
-    static Aircraft *create(const char *home_str, const char *frame_str) {
-        return new Plane(home_str, frame_str);
+    static Aircraft *create(const char *frame_str) {
+        return new Plane(frame_str);
     }
 
 protected:
@@ -121,7 +121,7 @@ protected:
     float dragCoeff(float alpha) const;
     Vector3f getForce(float inputAileron, float inputElevator, float inputRudder) const;
     Vector3f getTorque(float inputAileron, float inputElevator, float inputRudder, float inputThrust, const Vector3f &force) const;
-    void calculate_forces(const struct sitl_input &input, Vector3f &rot_accel, Vector3f &body_accel);
+    void calculate_forces(const struct sitl_input &input, Vector3f &rot_accel);
 };
 
 } // namespace SITL

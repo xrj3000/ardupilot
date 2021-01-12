@@ -117,17 +117,14 @@ CSRC = $(sort $(ALLCSRC))
 CSRC += $(HWDEF)/common/stubs.c \
 	   $(HWDEF)/common/board.c \
 	   $(HWDEF)/common/usbcfg.c \
+	   $(HWDEF)/common/usbcfg_dualcdc.c \
+	   $(HWDEF)/common/usbcfg_common.c \
 	   $(HWDEF)/common/flash.c \
 	   $(HWDEF)/common/malloc.c \
 	   $(HWDEF)/common/hrt.c \
        $(HWDEF)/common/stm32_util.c \
        $(HWDEF)/common/bouncebuffer.c \
        $(HWDEF)/common/watchdog.c
-
-ifeq ($(USE_FATFS),yes)
-CSRC += $(HWDEF)/common/posix.c
-endif
-
 
 #	   $(TESTSRC) \
 #	   test.c
@@ -214,6 +211,11 @@ UDEFS = $(ENV_UDEFS) $(FATFS_FLAGS) -DHAL_BOARD_NAME=\"$(HAL_BOARD_NAME)\"
 ifeq ($(ENABLE_ASSERTS),yes)
  UDEFS += -DHAL_CHIBIOS_ENABLE_ASSERTS
  ASXFLAGS += -DHAL_CHIBIOS_ENABLE_ASSERTS
+endif
+
+ifeq ($(ENABLE_MALLOC_GUARD),yes)
+ UDEFS += -DHAL_CHIBIOS_ENABLE_MALLOC_GUARD
+ ASXFLAGS += -DHAL_CHIBIOS_ENABLE_MALLOC_GUARD
 endif
 
 # Define ASM defines here

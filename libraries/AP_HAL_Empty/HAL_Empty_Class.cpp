@@ -32,6 +32,8 @@ HAL_Empty::HAL_Empty() :
         nullptr,            /* no uartE */
         nullptr,            /* no uartF */
         nullptr,            /* no uartG */
+        nullptr,            /* no uartH */
+        nullptr,            /* no uartI */
         &spiDeviceManager,
         &analogIn,
         &storageDriver,
@@ -42,7 +44,8 @@ HAL_Empty::HAL_Empty() :
         &schedulerInstance,
         &utilInstance,
         &opticalFlowDriver,
-        &flashDriver)
+        &flashDriver,
+        nullptr)            /* no DSP */
 {}
 
 void HAL_Empty::run(int argc, char* const argv[], Callbacks* callbacks) const
@@ -53,11 +56,11 @@ void HAL_Empty::run(int argc, char* const argv[], Callbacks* callbacks) const
      * up to the programmer to do this in the correct order.
      * Scheduler should likely come first. */
     scheduler->init();
-    uartA->begin(115200);
+    serial(0)->begin(115200);
     _member->init();
 
     callbacks->setup();
-    scheduler->system_initialized();
+    scheduler->set_system_initialized();
 
     for (;;) {
         callbacks->loop();

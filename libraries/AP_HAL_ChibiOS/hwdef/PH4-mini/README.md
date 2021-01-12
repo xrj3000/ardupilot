@@ -1,13 +1,13 @@
 # Pixhawk4-Mini Flight Controller
 
-The Pixhawk4-Mini flight controller is sold by [Holybro](http://www.holybro.com/product/64)
+The Pixhawk4-Mini flight controller is sold by [Holybro](https://shop.holybro.com/pixhawk4-mini_p1120.html)
 
 ## Features
 
  - STM32F765 microcontroller
  - Two IMUs: ICM20689 and BMI055
  - MS5611 SPI barometer
- - builtin SPI IST8310 magnetometer
+ - builtin I2C IST8310 magnetometer
  - microSD card slot
  - 5 UARTs plus USB
  - 8 PWM outputs
@@ -32,7 +32,7 @@ The Pixhawk4-Mini flight controller is sold by [Holybro](http://www.holybro.com/
 The Telem1 port has RTS/CTS pins, the other UARTs do not have RTS/CTS.
 
 The RCIN port can be used as RX or TX as a general UART using the
-SERIAL5_OPTIONS bits to swap pins. It is not used for RC input (the
+SERIAL4_OPTIONS bits to swap pins. It is not used for RC input (the
 PPM pin is used for RC input)
 
 The UART7 connector is inside the case and labelled as debug, but is
@@ -116,6 +116,278 @@ The Pixhawk4-Mini has 4 analog inputs
  - ADC Pin1 -> Battery Current Sensor
  - ADC Pin10 -> ADC 5V Sense
  - ADC Pin11 -> ADC 3.3V Sense
+
+## Connectors
+
+Unless noted otherwise all connectors are JST GH
+
+### TELEM port
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin </th>
+   <th>Signal </th>
+   <th>Volt </th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>VCC</td>
+   <td>+5V</td>
+   </tr>
+   <tr>
+   <td>2 (blk)</td>
+   <td>TX (OUT)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>RX (IN)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>CTS</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>5 (blk)</td>
+   <td>RTS</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>6 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
+
+
+### GPS port
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin </th>
+   <th>Signal </th>
+   <th>Volt </th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>VCC</td>
+   <td>+5V</td>
+   </tr>
+   <tr>
+   <td>2 (blk)</td>
+   <td>SERIAL3 TX (OUT)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>SERIAL3 RX (IN)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>SCL</td>
+   <td>+3.3 (pullups)</td>
+   </tr>
+   <tr>
+   <td>5 (blk)</td>
+   <td>SDA</td>
+   <td>+3.3 (pullups)</td>
+   </tr>
+   <tr>
+   <td>6 (blk)</td>
+   <td>SafetyButton</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>7 (blk)</td>
+   <td>SafetyLED</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>8 (blk)</td>
+   <td>VDD 3.3 (OUT)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>9 (blk)</td>
+   <td>Buzzer</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>10 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
+
+### TELEM2 & I2CB port
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin</th>
+   <th>Signal</th>
+   <th>Volt</th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>VCC</td>
+   <td>+5V</td>
+   </tr>
+   <tr>
+   <td>2 (blk)</td>
+   <td>TX (OUT)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>RX (IN)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>SCL I2C2</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>5 (blk)</td>
+   <td>SDA I2C2</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>6 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
+
+### POWER1&2
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin</th>
+   <th>Signal</th>
+   <th>Volt</th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>VCC</td>
+   <td>+5V</td>
+   </tr>
+   <tr>
+   <td>2 (red)</td>
+   <td>VCC</td>
+   <td>+5V</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>CURRENT</td>
+   <td>up to +3.3V</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>VOLTAGE</td>
+   <td>up to +3.3V</td>
+   </tr>
+   <td>5 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   <td>6 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
+
+### RCIN port
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin </th>
+   <th>Signal </th>
+   <th>Volt </th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>VCC</td>
+   <td>+5V</td>
+   </tr>
+   <tr>
+   <td>2 (blk)</td>
+   <td>RCIN (IN)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>RSSI (IN)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>VDD3.3</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>5 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
+
+## Debug
+
+The Pixhawk4 supports SWD debugging on the debug port
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin </th>
+   <th>Signal </th>
+   <th>Volt </th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>FMU VDD 3.3</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>2 (blk)</td>
+   <td>UART TX Debug (OUT)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>UART RX Debug (IN)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>SWDIO</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>5 (blk)</td>
+   <td>SWCLK</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>6 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
 
 ## Loading Firmware
 
