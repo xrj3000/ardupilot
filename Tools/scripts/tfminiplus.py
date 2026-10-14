@@ -1,5 +1,7 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3
+
+# flake8: noqa
 
 import argparse
 import fcntl
@@ -11,7 +13,7 @@ import time
 
 try:
     import argcomplete
-except:
+except ImportError:
     pass
 
 SYSTEM_RESET  = struct.pack('B' * 4, 0x5A, 0x04, 0x02, 0x60)
@@ -45,9 +47,9 @@ def parse_args(proc_args):
     p.add_argument('uart', help="UART device the sensor is currently using (e.g. /dev/ttyUSB0, /dev/ttyS1, etc)")
     p.set_defaults(func=cmd_switch_to_i2c)
 
-    p = subparsers.add_parser('switch-to-uart', help="Switch sensor to I2C mode")
-    p.add_argument('i2c-dev', help="I2C-device the sensor is currently using (e.g. /dev/i2c-1, /dev/i2c-2, etc)")
-    p.add_argument('addr', help="I2C-device's address the sensor is currently using (e.g. 0x10, 0x11, etc)")
+    p = subparsers.add_parser('switch-to-uart', help="Switch sensor to UART mode")
+    p.add_argument('i2c_dev', help="I2C device the sensor is currently using (e.g. /dev/i2c-1, /dev/i2c-2, etc)")
+    p.add_argument('addr', type=lambda x: int(x, 0), help="I2C device's address the sensor is currently using (e.g. 0x10, 0x11, etc)")
     p.set_defaults(func=cmd_switch_to_uart)
 
     try:

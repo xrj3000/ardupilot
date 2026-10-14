@@ -28,8 +28,8 @@ using namespace SITL;
 const AP_Param::GroupInfo Sprayer::var_info[] = {
 
     // @Param: ENABLE
-    // @DisplayName: Gripper servo Sim enable/disable
-    // @Description: Allows you to enable (1) or disable (0) the gripper servo simulation
+    // @DisplayName: Sprayer Sim enable/disable
+    // @Description: Allows you to enable (1) or disable (0) the Sprayer simulation
     // @Values: 0:Disabled,1:Enabled
     // @User: Advanced
     AP_GROUPINFO("ENABLE", 0, Sprayer, sprayer_enable, 0),
@@ -76,7 +76,7 @@ void Sprayer::update(const struct sitl_input &input)
         if (pump_demand < 0) { // never updated
             pump_demand = 0;
         }
-        const float pump_max_change = pump_slew_rate / 100.0f * dt;
+        const float pump_max_change = pump_slew_rate * 0.01f * dt;
         last_pump_output =
             constrain_float(pump_demand, last_pump_output - pump_max_change, last_pump_output + pump_max_change);
         last_pump_output = constrain_float(last_pump_output, 0, 1);
@@ -122,4 +122,3 @@ bool Sprayer::should_report()
 
     return false;
 }
-

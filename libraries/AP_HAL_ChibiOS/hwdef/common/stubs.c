@@ -70,8 +70,8 @@
  * 
  * Modified for use in AP_HAL by Andrew Tridgell and Siddharth Bharat Purohit
  */
+
 #include <sys/unistd.h>
-#include <errno.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -88,21 +88,11 @@ uint8_t _before_main = 1;
 __attribute__((used))
 int _read(struct _reent *r, int file, char * ptr, int len)
 {
-  (void)r;
-#if defined(STDIN_SD)
-  if (!len || (file != 0)) {
-    __errno_r(r) = EINVAL;
+    (void)r;
+    (void)file;
+    (void)ptr;
+    (void)len;
     return -1;
-  }
-  len = sdRead(&STDIN_SD, (uint8_t *)ptr, (size_t)len);
-  return len;
-#else
-  (void)file;
-  (void)ptr;
-  (void)len;
-  __errno_r(r) = EINVAL;
-  return -1;
-#endif
 }
 
 /***************************************************************************/
@@ -110,12 +100,12 @@ int _read(struct _reent *r, int file, char * ptr, int len)
 __attribute__((used))
 int _lseek(struct _reent *r, int file, int ptr, int dir)
 {
-  (void)r;
-  (void)file;
-  (void)ptr;
-  (void)dir;
+    (void)r;
+    (void)file;
+    (void)ptr;
+    (void)dir;
 
-  return 0;
+    return 0;
 }
 
 /***************************************************************************/
@@ -123,17 +113,11 @@ int _lseek(struct _reent *r, int file, int ptr, int dir)
 __attribute__((used))
 int _write(struct _reent *r, int file, char * ptr, int len)
 {
-  (void)r;
-  (void)file;
-  (void)ptr;
-#if defined(STDOUT_SD)
-  if (file != 1) {
-    __errno_r(r) = EINVAL;
+    (void)r;
+    (void)file;
+    (void)ptr;
+    (void)len;
     return -1;
-  }
-  sdWrite(&STDOUT_SD, (uint8_t *)ptr, (size_t)len);
-#endif
-  return len;
 }
 
 /***************************************************************************/
@@ -141,46 +125,20 @@ int _write(struct _reent *r, int file, char * ptr, int len)
 __attribute__((used))
 int _close(struct _reent *r, int file)
 {
-  (void)r;
-  (void)file;
-
-  return 0;
+    (void)r;
+    (void)file;
+    return 0;
 }
-
-/***************************************************************************/
-
-__attribute__((used))
-caddr_t _sbrk(struct _reent *r, int incr)
-{
-#if CH_CFG_USE_MEMCORE && CH_CFG_USE_HEAP == TRUE
-  void *p;
-
-  chDbgCheck(incr >= 0);
-  p = chHeapAlloc(NULL, (size_t)incr);
-  if (p == NULL) {
-    __errno_r(r) = ENOMEM;
-    return (caddr_t)-1;
-  }
-  return (caddr_t)p;
-#else
-  (void)incr;
-  __errno_r(r) = ENOMEM;
-  return (caddr_t)-1;
-#endif
-}
-
 
 /***************************************************************************/
 
 __attribute__((used))
 int _fstat(struct _reent *r, int file, struct stat * st)
 {
-  (void)r;
-  (void)file;
-
-  memset(st, 0, sizeof(*st));
-  st->st_mode = S_IFCHR;
-  return 0;
+    (void)r;
+    (void)file;
+    (void)st;
+    return -1;
 }
 
 /***************************************************************************/
@@ -188,23 +146,22 @@ int _fstat(struct _reent *r, int file, struct stat * st)
 __attribute__((used))
 int _isatty(struct _reent *r, int fd)
 {
-  (void)r;
-  (void)fd;
-
-  return 1;
+    (void)r;
+    (void)fd;
+    return 1;
 }
 
 __attribute__((used))
 pid_t _getpid(void)
 {
-  return 0;
+    return 0;
 }
 
 __attribute__((used))
 void _exit( int status )
 {
-  (void)status;
-  while( 1 );
+    (void)status;
+    while ( 1 );
 }
 
 __attribute__((used))
@@ -215,8 +172,9 @@ void _fini(void)
 __attribute__((used))
 int _kill( int pid, int sig )
 {
-  (void)pid; (void)sig;
-  return -1;
+    (void)pid;
+    (void)sig;
+    return -1;
 }
 
 /*** EOF ***/

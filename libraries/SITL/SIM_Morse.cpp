@@ -18,6 +18,8 @@
 
 #include "SIM_Morse.h"
 
+#if AP_SIM_MORSE_ENABLED
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -27,7 +29,6 @@
 #include <sys/types.h>
 
 #include <AP_HAL/AP_HAL.h>
-#include <AP_Logger/AP_Logger.h>
 #include "pthread.h"
 #include <AP_HAL/utility/replace.h>
 
@@ -80,8 +81,8 @@ static const struct {
 };
 
 
-Morse::Morse(const char *home_str, const char *frame_str) :
-    Aircraft(home_str, frame_str)
+Morse::Morse(const char *frame_str) :
+    Aircraft(frame_str)
 {
     char *saveptr = nullptr;
     char *s = strdup(frame_str);
@@ -105,14 +106,16 @@ Morse::Morse(const char *home_str, const char *frame_str) :
     }
 
     if (strstr(frame_option, "-rover")) {
-        output_type = OUTPUT_ROVER;
+        output_type = OUTPUT_ROVER_REGULAR;
+    } else if (strstr(frame_option, "-skid")) {
+        output_type = OUTPUT_ROVER_SKID;
     } else if (strstr(frame_option, "-quad")) {
         output_type = OUTPUT_QUAD;
     } else if (strstr(frame_option, "-pwm")) {
         output_type = OUTPUT_PWM;
     } else {
         // default to rover
-        output_type = OUTPUT_ROVER;
+        output_type = OUTPUT_ROVER_REGULAR;
     }
 
     for (uint8_t i=0; i<ARRAY_SIZE(sim_defaults); i++) {
@@ -161,7 +164,7 @@ bool Morse::parse_sensors(const char *json)
         p += strlen(key.key)+3;
         switch (key.type) {
         case DATA_FLOAT:
-            *((float *)key.ptr) = atof(p);
+            *((float *)key.ptr) = strtof(p, nullptr);
             break;
 
         case DATA_DOUBLE:
@@ -234,7 +237,7 @@ bool Morse::parse_sensors(const char *json)
                     v->data = d;
                     v->length = n+1;
                 }
-                v->data[n] = atof(p);
+                v->data[n] = strtof(p, nullptr);
                 n++;
                 p = strchr(p,',');
                 if (!p) {
@@ -257,7 +260,7 @@ bool Morse::parse_sensors(const char *json)
 bool Morse::connect_sockets(void)
 {
     if (!sensors_sock) {
-        sensors_sock = new SocketAPM(false);
+        sensors_sock = NEW_NOTHROW SocketAPM_native(false);
         if (!sensors_sock) {
             AP_HAL::panic("Out of memory for sensors socket");
         }
@@ -276,7 +279,7 @@ bool Morse::connect_sockets(void)
         printf("Sensors connected\n");
     }
     if (!control_sock) {
-        control_sock = new SocketAPM(false);
+        control_sock = NEW_NOTHROW SocketAPM_native(false);
         if (!control_sock) {
             AP_HAL::panic("Out of memory for control socket");
         }
@@ -340,9 +343,45 @@ bool Morse::sensors_receive(void)
 }
 
 /*
+  output control command assuming steering/throttle rover
+ */
+void Morse::output_rover_regular(const struct sitl_input &input)
+{
+    float throttle = 2*((input.servos[2]-1000)/1000.0f - 0.5f);
+    float ground_steer = 2*((input.servos[0]-1000)/1000.0f - 0.5f);
+    float max_steer = radians(60);
+    float max_speed = 20;
+    float max_accel = 20;
+
+     // speed in m/s in body frame
+    Vector3f velocity_body = dcm.transposed() * velocity_ef;
+
+    // speed along x axis, +ve is forward
+    float speed = velocity_body.x;
+
+    // target speed with current throttle
+    float target_speed = throttle * max_speed;
+
+    // linear acceleration in m/s/s - very crude model
+    float accel = max_accel * (target_speed - speed) / max_speed;
+
+    //force directly proportion to acceleration 
+    float force = accel;
+
+    float steer = ground_steer * max_steer;
+
+    // construct a JSON packet for steer/force
+    char buf[60];
+    snprintf(buf, sizeof(buf)-1, "{\"steer\": %.3f, \"force\": %.2f, \"brake\": %.2f}\n",
+             steer, -force, 0.0);
+    buf[sizeof(buf)-1] = 0;
+
+    control_sock->send(buf, strlen(buf));
+}
+/*
   output control command assuming skid-steering rover
  */
-void Morse::output_rover(const struct sitl_input &input)
+void Morse::output_rover_skid(const struct sitl_input &input)
 {
     float motor1 = 2*((input.servos[0]-1000)/1000.0f - 0.5f);
     float motor2 = 2*((input.servos[2]-1000)/1000.0f - 0.5f);
@@ -413,6 +452,7 @@ void Morse::output_pwm(const struct sitl_input &input)
  */
 void Morse::update(const struct sitl_input &input)
 {
+    update_battery();
     if (!connect_sockets()) {
         return;
     }
@@ -474,7 +514,8 @@ void Morse::update(const struct sitl_input &input)
                            -state.velocity.world_linear_velocity[1],
                            -state.velocity.world_linear_velocity[2]);
 
-    position = Vector3f(state.gps.x, -state.gps.y, -state.gps.z);
+    position = Vector3d(state.gps.x, -state.gps.y, -state.gps.z);
+    position.xy() += origin.get_distance_NE_double(home);
 
     // Morse IMU accel is NEU, convert to NED
     accel_body = Vector3f(state.imu.linear_acceleration[0],
@@ -510,8 +551,11 @@ void Morse::update(const struct sitl_input &input)
     update_mag_field_bf();
 
     switch (output_type) {
-    case OUTPUT_ROVER:
-        output_rover(input);
+    case OUTPUT_ROVER_REGULAR:
+        output_rover_regular(input);
+        break;
+    case OUTPUT_ROVER_SKID:
+        output_rover_skid(input);
         break;
     case OUTPUT_QUAD:
         output_quad(input);
@@ -522,6 +566,10 @@ void Morse::update(const struct sitl_input &input)
     }
 
     report_FPS();
+
+#if HAL_GCS_ENABLED
+    send_report();
+#endif
 }
 
 
@@ -543,3 +591,88 @@ void Morse::report_FPS(void)
         last_frame_count_s = state.timestamp;
     }
 }
+
+
+
+#if HAL_GCS_ENABLED
+/*
+  send a report to the vehicle control code over MAVLink
+*/
+void Morse::send_report(void)
+{
+    const uint32_t now = AP_HAL::millis();
+#if defined(__CYGWIN__) || defined(__CYGWIN64__)
+    if (now < 10000) {
+        // don't send lidar reports until 10s after startup. This
+        // avoids a windows threading issue with non-blocking sockets
+        // and the initial wait on SERIAL0
+        return;
+    }
+#endif
+
+    // this is usually loopback
+    if (!mavlink.connected && mav_socket.connect(mavlink_loopback_address, mavlink_loopback_port)) {
+        ::printf("Morse MAVLink loopback connected to %s:%u\n", mavlink_loopback_address, (unsigned)mavlink_loopback_port);
+        mavlink.connected = true;
+    }
+    if (!mavlink.connected) {
+        return;
+    }
+
+    // send a OBSTACLE_DISTANCE messages at 15 Hz
+    if (now - send_report_last_ms >= (1000/15) && scanner.points.length == scanner.ranges.length && scanner.points.length > 0) {
+        send_report_last_ms = now;
+
+        mavlink_obstacle_distance_t packet {};
+        packet.time_usec = AP_HAL::micros64();
+        packet.min_distance = 1;
+        // the simulated rangefinder has an imposed 18m limit in
+        // e.g. rover_scanner.py
+        packet.max_distance = 5000;
+        packet.sensor_type = MAV_DISTANCE_SENSOR_LASER;
+        packet.increment = 0; // use increment_f
+
+        packet.angle_offset = 180;
+        packet.increment_f = (-5);  // NOTE! This is negative because the distances[] arc is counter-clockwise
+
+        for (uint8_t i=0; i<MAVLINK_MSG_OBSTACLE_DISTANCE_FIELD_DISTANCES_LEN; i++) {
+
+            if (i >= scanner.points.length) {
+                packet.distances[i] = 65535;
+                continue;
+            }
+
+            // convert m to cm and sanity check
+            const Vector2f v = Vector2f(scanner.points.data[i].x, scanner.points.data[i].y);
+            const float distance_cm = v.length()*100;
+            if (distance_cm < packet.min_distance) {
+                packet.distances[i] = packet.max_distance + 1; // "no obstacle"
+                continue;
+            }
+
+            if (distance_cm > packet.max_distance) {
+                packet.distances[i] = packet.max_distance + 1; // "no obstacle"
+                continue;
+            }
+
+            packet.distances[i] = distance_cm;
+        }
+
+        mavlink_message_t msg;
+        uint16_t len = mavlink_msg_obstacle_distance_encode_status(
+                mavlink_system.sysid,
+                13,
+                &mavlink.status,
+                &msg, &packet);
+
+        uint8_t msgbuf[len];
+        len = mavlink_msg_to_send_buffer(msgbuf, &msg);
+        if (len > 0) {
+            mav_socket.send(msgbuf, len);
+        }
+    }
+
+}
+#endif  // HAL_GCS_ENABLED
+
+#endif  // AP_SIM_MORSE_ENABLED

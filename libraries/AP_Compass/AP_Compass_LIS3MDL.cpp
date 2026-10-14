@@ -19,6 +19,8 @@
  */
 #include "AP_Compass_LIS3MDL.h"
 
+#if AP_COMPASS_LIS3MDL_ENABLED
+
 #include <AP_HAL/AP_HAL.h>
 #include <utility>
 #include <AP_Math/AP_Math.h>
@@ -46,8 +48,6 @@
 #define ADDR_WHO_AM_I       0x0f
 #define ID_WHO_AM_I         0x3d
 
-extern const AP_HAL::HAL &hal;
-
 AP_Compass_Backend *AP_Compass_LIS3MDL::probe(AP_HAL::OwnPtr<AP_HAL::Device> dev,
                                               bool force_external,
                                               enum Rotation rotation)
@@ -55,7 +55,7 @@ AP_Compass_Backend *AP_Compass_LIS3MDL::probe(AP_HAL::OwnPtr<AP_HAL::Device> dev
     if (!dev) {
         return nullptr;
     }
-    AP_Compass_LIS3MDL *sensor = new AP_Compass_LIS3MDL(std::move(dev), force_external, rotation);
+    AP_Compass_LIS3MDL *sensor = NEW_NOTHROW AP_Compass_LIS3MDL(std::move(dev), force_external, rotation);
     if (!sensor || !sensor->init()) {
         delete sensor;
         return nullptr;
@@ -75,9 +75,7 @@ AP_Compass_LIS3MDL::AP_Compass_LIS3MDL(AP_HAL::OwnPtr<AP_HAL::Device> _dev,
 
 bool AP_Compass_LIS3MDL::init()
 {
-    if (!dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-        return false;
-    }
+    dev->get_semaphore()->take_blocking();
 
     if (dev->bus_type() == AP_HAL::Device::BUS_TYPE_SPI) {
         dev->set_read_flag(0xC0);
@@ -107,19 +105,19 @@ bool AP_Compass_LIS3MDL::init()
     dev->get_semaphore()->give();
 
     /* register the compass instance in the frontend */
-    compass_instance = register_compass();
+    dev->set_device_type(DEVTYPE_LIS3MDL);
+    if (!register_compass(dev->get_bus_id())) {
+        return false;
+    }
 
-    printf("Found a LIS3MDL on 0x%x as compass %u\n", dev->get_bus_id(), compass_instance);
-    
-    set_rotation(compass_instance, rotation);
+    printf("Found a LIS3MDL on 0x%x as compass %u\n", unsigned(dev->get_bus_id()), instance);
+
+    set_rotation(rotation);
 
     if (force_external) {
-        set_external(compass_instance, true);
+        set_external(true);
     }
     
-    dev->set_device_type(DEVTYPE_LIS3MDL);
-    set_dev_id(compass_instance, dev->get_bus_id());
-
     // call timer() at 80Hz
     dev->register_periodic_callback(1000000U/80U,
                                     FUNCTOR_BIND_MEMBER(&AP_Compass_LIS3MDL::timer, void));
@@ -139,7 +137,6 @@ void AP_Compass_LIS3MDL::timer()
         int16_t magz;
     } data;
     const float range_scale = 1000.0f / 6842.0f;
-    Vector3f field;
 
     // check data ready
     uint8_t status;
@@ -155,15 +152,18 @@ void AP_Compass_LIS3MDL::timer()
         goto check_registers;
     }
 
-    field(data.magx * range_scale, data.magy * range_scale, data.magz * range_scale);
+    {
+        Vector3f field{
+            data.magx * range_scale,
+            data.magy * range_scale,
+            data.magz * range_scale,
+        };
 
-    accumulate_sample(field, compass_instance);
+        accumulate_sample(field);
+    }
 
 check_registers:
     dev->check_next_register();
 }
 
-void AP_Compass_LIS3MDL::read()
-{
-    drain_accumulated_samples(compass_instance);
-}
+#endif  // AP_COMPASS_LIS3MDL_ENABLED

@@ -17,11 +17,14 @@
   but with some components from orleod.cpp from px4 firmware
 */
 
+#include "OreoLED_I2C.h"
+
+#if AP_NOTIFY_OREOLED_ENABLED
+
 #include <AP_HAL/AP_HAL.h>
 #include <AP_HAL/I2CDevice.h>
 
 #include <AP_BoardConfig/AP_BoardConfig.h>
-#include "OreoLED_I2C.h"
 #include "AP_Notify.h"
 #include <utility>
 
@@ -76,15 +79,19 @@ void OreoLED_I2C::update()
     }
 
     if (mode_firmware_update()) {
-        return;    // don't go any further if the Pixhawk is in firmware update
+        return;    // don't go any further if in firmware update
     }
 
     if (mode_init()) {
-        return;    // don't go any further if the Pixhawk is initializing
+        return;    // don't go any further if initializing
     }
 
     if (mode_failsafe_radio()) {
-        return;    // don't go any further if the Pixhawk is is in radio failsafe
+        return;    // don't go any further if in radio failsafe
+    }
+
+    if (mode_failsafe_gcs()) {
+        return;    // don't go any further if in gcs failsafe
     }
 
     set_standard_colors();
@@ -119,7 +126,7 @@ bool OreoLED_I2C::slow_counter()
 }
 
 
-// Procedure for when Pixhawk is in FW update / bootloader
+// Procedure for when in FW update / bootloader
 // Makes all LEDs go into color cycle mode
 // Returns true if firmware update in progress. False if not
 bool OreoLED_I2C::mode_firmware_update()
@@ -145,7 +152,7 @@ bool OreoLED_I2C::mode_init()
 }
 
 
-// Procedure for when Pixhawk is in radio failsafe
+// Procedure for when in radio failsafe
 // LEDs perform alternating Red X pattern
 bool OreoLED_I2C::mode_failsafe_radio()
 {
@@ -156,6 +163,20 @@ bool OreoLED_I2C::mode_failsafe_radio()
         set_rgb(OREOLED_BACKRIGHT, OREOLED_PATTERN_STROBE, 255, 0, 0,0,0,0,PERIOD_SLOW,0);
     }
     return AP_Notify::flags.failsafe_radio;
+}
+
+
+// Procedure for when in GCS failsafe
+// LEDs perform alternating yellow X pattern
+bool OreoLED_I2C::mode_failsafe_gcs()
+{
+    if (AP_Notify::flags.failsafe_gcs) {
+        set_rgb(OREOLED_FRONTLEFT, OREOLED_PATTERN_STROBE, 255, 50, 0,0,0,0,PERIOD_SLOW,0);
+        set_rgb(OREOLED_FRONTRIGHT, OREOLED_PATTERN_STROBE, 255, 50, 0,0,0,0,PERIOD_SLOW,PO_ALTERNATE);
+        set_rgb(OREOLED_BACKLEFT, OREOLED_PATTERN_STROBE, 255, 50, 0,0,0,0,PERIOD_SLOW,PO_ALTERNATE);
+        set_rgb(OREOLED_BACKRIGHT, OREOLED_PATTERN_STROBE, 255, 50, 0,0,0,0,PERIOD_SLOW,0);
+    }
+    return AP_Notify::flags.failsafe_gcs;
 }
 
 
@@ -219,7 +240,7 @@ bool OreoLED_I2C::mode_failsafe_batt()
 }
 
 
-// Procedure for when Pixhawk is in an autopilot mode
+// Procedure for when in an autopilot mode
 // Makes all LEDs strobe super fast using standard colors
 bool OreoLED_I2C::mode_auto_flight()
 {
@@ -256,7 +277,7 @@ bool OreoLED_I2C::mode_auto_flight()
 }
 
 
-// Procedure for when Pixhawk is in a pilot controlled mode
+// Procedure for when in a pilot controlled mode
 // All LEDs use standard pattern and colors
 bool OreoLED_I2C::mode_pilot_flight()
 {
@@ -543,12 +564,13 @@ void OreoLED_I2C::send_sync(void)
 
 
 
+#if AP_NOTIFY_MAVLINK_LED_CONTROL_SUPPORT_ENABLED
 // Handle an LED_CONTROL mavlink message
-void OreoLED_I2C::handle_led_control(mavlink_message_t *msg)
+void OreoLED_I2C::handle_led_control(const mavlink_message_t &msg)
 {
     // decode mavlink message
     mavlink_led_control_t packet;
-    mavlink_msg_led_control_decode(msg, &packet);
+    mavlink_msg_led_control_decode(&msg, &packet);
 
     // exit immediately if instance is invalid
     if (packet.instance >= OREOLED_NUM_LEDS && packet.instance != OREOLED_INSTANCE_ALL) {
@@ -627,6 +649,7 @@ void OreoLED_I2C::handle_led_control(mavlink_message_t *msg)
     }
     _pattern_override = packet.pattern;
 }
+#endif
 
 OreoLED_I2C::oreo_state::oreo_state()
 {
@@ -683,9 +706,11 @@ void OreoLED_I2C::oreo_state::set_rgb(enum oreoled_pattern new_pattern, uint8_t 
     phase_offset = new_phase_offset;
 }
 
-bool OreoLED_I2C::oreo_state::operator==(const OreoLED_I2C::oreo_state &os)
+bool OreoLED_I2C::oreo_state::operator==(const OreoLED_I2C::oreo_state &os) const
 {
     return ((os.mode==mode) && (os.pattern==pattern) && (os.macro==macro) && (os.red==red) && (os.green==green) && (os.blue==blue)
             && (os.amplitude_red==amplitude_red) && (os.amplitude_green==amplitude_green) && (os.amplitude_blue==amplitude_blue)
             && (os.period==period) && (os.repeat==repeat) && (os.phase_offset==phase_offset));
 }
+
+#endif  // AP_NOTIFY_OREOLED_ENABLED

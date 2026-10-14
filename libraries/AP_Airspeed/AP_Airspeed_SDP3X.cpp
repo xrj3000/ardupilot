@@ -19,7 +19,11 @@
   with thanks to https://github.com/PX4/Firmware/blob/master/src/drivers/sdp3x_airspeed
  */
 #include "AP_Airspeed_SDP3X.h"
+
+#if AP_AIRSPEED_SDP3X_ENABLED
+
 #include <GCS_MAVLink/GCS.h>
+#include <AP_Baro/AP_Baro.h>
 
 #include <stdio.h>
 
@@ -38,11 +42,6 @@
 
 extern const AP_HAL::HAL &hal;
 
-AP_Airspeed_SDP3X::AP_Airspeed_SDP3X(AP_Airspeed &_frontend, uint8_t _instance) :
-    AP_Airspeed_Backend(_frontend, _instance)
-{
-}
-
 /*
   send a 16 bit command code
  */
@@ -53,7 +52,7 @@ bool AP_Airspeed_SDP3X::_send_command(uint16_t cmd)
 }
 
 // probe and initialise the sensor
-bool AP_Airspeed_SDP3X::init()
+__INITFUNC__ bool AP_Airspeed_SDP3X::init()
 {
     const uint8_t addresses[3] = { SDP3XD0_I2C_ADDR,
                                    SDP3XD1_I2C_ADDR,
@@ -63,13 +62,11 @@ bool AP_Airspeed_SDP3X::init()
     bool ret = false;
 
     for (uint8_t i=0; i<ARRAY_SIZE(addresses) && !found; i++) {
-        _dev = hal.i2c_mgr->get_device(get_bus(), addresses[i]);
+        _dev = hal.i2c_mgr->get_device_ptr(get_bus(), addresses[i]);
         if (!_dev) {
             continue;
         }
-        if (!_dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-            continue;
-        }
+        _dev->get_semaphore()->take_blocking();
 
         // lots of retries during probe
         _dev->set_retries(10);
@@ -83,9 +80,7 @@ bool AP_Airspeed_SDP3X::init()
         // these delays are needed for reliable operation
         _dev->get_semaphore()->give();
         hal.scheduler->delay_microseconds(20000);
-        if (!_dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-            continue;
-        }
+        _dev->get_semaphore()->take_blocking();
 
         // start continuous average mode
         if (!_send_command(SDP3X_CONT_MEAS_AVG_MODE)) {
@@ -96,9 +91,7 @@ bool AP_Airspeed_SDP3X::init()
         // these delays are needed for reliable operation
         _dev->get_semaphore()->give();
         hal.scheduler->delay_microseconds(20000);
-        if (!_dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-            continue;
-        }
+        _dev->get_semaphore()->take_blocking();
 
         // step 3 - get scale
         uint8_t val[9];
@@ -120,6 +113,7 @@ bool AP_Airspeed_SDP3X::init()
 
         found = true;
 
+#if HAL_GCS_ENABLED
         char c = 'X';
         switch (_scale) {
         case SDP3X_SCALE_PRESSURE_SDP31:
@@ -132,21 +126,22 @@ bool AP_Airspeed_SDP3X::init()
             c = '3';
             break;
         }
-        hal.console->printf("SDP3%c: Found on bus %u address 0x%02x scale=%u\n",
-                            c, get_bus(), addresses[i], _scale);
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "SDP3%c[%u]: Found bus %u addr 0x%02x scale=%u",
+                      get_instance(),
+                      c, get_bus(), addresses[i], _scale);
+#endif
     }
 
     if (!found) {
         return false;
     }
 
-    /*
-      this sensor uses zero offset and skips cal
-     */
+    // this sensor uses zero offset
     set_use_zero_offset();
-    set_skip_cal();
-    set_offset(0);
-    
+
+    _dev->set_device_type(uint8_t(DevType::SDP3X));
+    set_bus_id(_dev->get_bus_id());
+
     // drop to 2 retries for runtime
     _dev->set_retries(2);
 
@@ -204,7 +199,7 @@ float AP_Airspeed_SDP3X::_correct_pressure(float press)
     case AP_Airspeed::PITOT_TUBE_ORDER_NEGATIVE:
         press = -press;
         sign = -1.0f;
-    //FALLTHROUGH;
+        break;
     case AP_Airspeed::PITOT_TUBE_ORDER_POSITIVE:
         break;
     case AP_Airspeed::PITOT_TUBE_ORDER_AUTO:
@@ -222,16 +217,25 @@ float AP_Airspeed_SDP3X::_correct_pressure(float press)
 
     AP_Baro *baro = AP_Baro::get_singleton();
 
-    if (baro == nullptr) {
-        return press;
+    float baro_pressure;
+    if (baro == nullptr || baro->num_instances() == 0) {
+        // with no baro assume sea level
+        baro_pressure = SSL_AIR_PRESSURE;
+    } else {
+        baro_pressure = baro->get_pressure();
     }
 
     float temperature;
     if (!get_temperature(temperature)) {
-        return press;
+        // assume 25C if no temperature
+        temperature = 25;
     }
 
-    float rho_air = baro->get_pressure() / (ISA_GAS_CONSTANT * (temperature + C_TO_KELVIN));
+    float rho_air = baro_pressure / (ISA_GAS_CONSTANT * C_TO_KELVIN(temperature));
+    if (!is_positive(rho_air)) {
+        // bad pressure
+        return press;
+    }
 
     /*
       the constants in the code below come from a calibrated test of
@@ -253,7 +257,7 @@ float AP_Airspeed_SDP3X::_correct_pressure(float press)
         flow_SDP3X = 0.0f;
     }
 
-    // diffential pressure through pitot tube
+    // differential pressure through pitot tube
     float dp_pitot = 28557670.0f * (1.0f - 1.0f / (1.0f + (float)powf((flow_SDP3X / 5027611.0f), 1.227924f)));
 
     // uncorrected pressure
@@ -264,6 +268,10 @@ float AP_Airspeed_SDP3X::_correct_pressure(float press)
 
     // airspeed ratio
     float ratio = get_airspeed_ratio();
+    if (!is_positive(ratio)) {
+        // cope with AP_Periph where ratio is 0
+        ratio = 2.0;
+    }
 
     // calculate equivalent pressure correction. This formula comes
     // from turning the dv correction above into an equivalent
@@ -277,18 +285,16 @@ float AP_Airspeed_SDP3X::_correct_pressure(float press)
 // return the current differential_pressure in Pascal
 bool AP_Airspeed_SDP3X::get_differential_pressure(float &pressure)
 {
-    uint32_t now = AP_HAL::millis();
-    if (now - _last_sample_time_ms > 100) {
+    WITH_SEMAPHORE(sem);
+
+    if (AP_HAL::millis() - _last_sample_time_ms > 100) {
         return false;
     }
 
-    {
-        WITH_SEMAPHORE(sem);
-        if (_press_count > 0) {
-            _press = _press_sum / _press_count;
-            _press_count = 0;
-            _press_sum = 0;
-        }
+    if (_press_count > 0) {
+        _press = _press_sum / _press_count;
+        _press_count = 0;
+        _press_sum = 0;
     }
 
     pressure = _correct_pressure(_press);
@@ -298,11 +304,11 @@ bool AP_Airspeed_SDP3X::get_differential_pressure(float &pressure)
 // return the current temperature in degrees C, if available
 bool AP_Airspeed_SDP3X::get_temperature(float &temperature)
 {
+    WITH_SEMAPHORE(sem);
+
     if ((AP_HAL::millis() - _last_sample_time_ms) > 100) {
         return false;
     }
-
-    WITH_SEMAPHORE(sem);
 
     if (_temp_count > 0) {
         _temp = _temp_sum / _temp_count;
@@ -317,7 +323,7 @@ bool AP_Airspeed_SDP3X::get_temperature(float &temperature)
 /*
   check CRC for a set of bytes
  */
-bool AP_Airspeed_SDP3X::_crc(const uint8_t data[], unsigned size, uint8_t checksum)
+bool AP_Airspeed_SDP3X::_crc(const uint8_t data[], uint8_t size, uint8_t checksum)
 {
     uint8_t crc_value = 0xff;
 
@@ -335,3 +341,5 @@ bool AP_Airspeed_SDP3X::_crc(const uint8_t data[], unsigned size, uint8_t checks
     // verify checksum
     return (crc_value == checksum);
 }
+
+#endif  // AP_AIRSPEED_SDP3X_ENABLED

@@ -26,19 +26,19 @@
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Math/AP_Math.h>
 
-static const AP_HAL::HAL &hal = AP_HAL::get_HAL();
+extern const AP_HAL::HAL& hal;
 
 namespace Linux {
 
 PWM_Sysfs_Base::PWM_Sysfs_Base(char* export_path, char* polarity_path,
                           char* enable_path, char* duty_path,
                           char* period_path, uint8_t channel)
-    : _export_path(export_path)
+    : _channel(channel)
+    , _export_path(export_path)
     , _polarity_path(polarity_path)
     , _enable_path(enable_path)
     , _duty_path(duty_path)
     , _period_path(period_path)
-    , _channel(channel)
 {
 }
 

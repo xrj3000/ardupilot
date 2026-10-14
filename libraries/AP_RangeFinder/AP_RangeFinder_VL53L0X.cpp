@@ -20,6 +20,8 @@
  */
 #include "AP_RangeFinder_VL53L0X.h"
 
+#if AP_RANGEFINDER_VL53L0X_ENABLED
+
 #include <utility>
 
 #include <AP_HAL/AP_HAL.h>
@@ -211,11 +213,6 @@ const AP_RangeFinder_VL53L0X::RegData AP_RangeFinder_VL53L0X::tuning_data[] =
     { 0x80, 0x00 },
 };
 
-/*
-   The constructor also initializes the rangefinder. Note that this
-   constructor is not called until detect() returns true, so we
-   already know that we should setup the rangefinder
-*/
 AP_RangeFinder_VL53L0X::AP_RangeFinder_VL53L0X(RangeFinder::RangeFinder_State &_state, AP_RangeFinder_Params &_params, AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev)
     : AP_RangeFinder_Backend(_state, _params)
     , dev(std::move(_dev)) {}
@@ -228,11 +225,11 @@ AP_RangeFinder_VL53L0X::AP_RangeFinder_VL53L0X(RangeFinder::RangeFinder_State &_
 */
 AP_RangeFinder_Backend *AP_RangeFinder_VL53L0X::detect(RangeFinder::RangeFinder_State &_state, AP_RangeFinder_Params &_params, AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev)
 {
-	if(!dev){
+	if (!dev) {
 		return nullptr;
 	}
     AP_RangeFinder_VL53L0X *sensor
-        = new AP_RangeFinder_VL53L0X(_state, _params, std::move(dev));
+        = NEW_NOTHROW AP_RangeFinder_VL53L0X(_state, _params, std::move(dev));
 
     if (!sensor) {
         delete sensor;
@@ -262,7 +259,7 @@ bool AP_RangeFinder_VL53L0X::check_id(void)
         v2 != 0xAA) {
         return false;
     }
-    printf("Detected VL53L0X on bus 0x%x\n", dev->get_bus_id());
+    printf("Detected VL53L0X on bus 0x%x\n", unsigned(dev->get_bus_id()));
     return true;
 }
 
@@ -767,13 +764,13 @@ uint16_t AP_RangeFinder_VL53L0X::read_register16(uint8_t reg)
 void AP_RangeFinder_VL53L0X::update(void)
 {
     if (counter > 0) {
-        state.distance_cm = sum_mm / (10*counter);
+        state.distance_m = (sum_mm * 0.001f) / counter;
         state.last_reading_ms = AP_HAL::millis();
         sum_mm = 0;
         counter = 0;
         update_status();
     } else {
-        set_status(RangeFinder::RangeFinder_NoData);
+        set_status(RangeFinder::Status::NoData);
     }
 }
 
@@ -785,3 +782,5 @@ void AP_RangeFinder_VL53L0X::timer(void)
         counter++;
     }
 }
+
+#endif  // AP_RANGEFINDER_VL53L0X_ENABLED

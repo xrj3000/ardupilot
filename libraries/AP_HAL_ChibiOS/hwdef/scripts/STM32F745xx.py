@@ -1,4 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+
+# flake8: noqa
 '''
 these tables are generated from the STM32 datasheets for the
 STM32F74x
@@ -12,16 +14,25 @@ build = {
 
 # MCU parameters
 mcu = {
-    # location of MCU serial number
-    'UDID_START' : 0x1FF0F420,
-
     # ram map, as list of (address, size-kb, flags)
     # flags of 1 means DMA-capable
     # flags of 2 means faster memory for CPU intensive work
     'RAM_MAP' : [
         (0x20010000, 256, 0), # main memory, not DMA safe
         (0x20000000,  64, 1), # DTCM memory, DMA safe
-    ]
+    ],
+
+    'EXPECTED_CLOCK' : 216000000,
+
+    'DEFINES' : {
+        'STM32F7' : '1',
+    },
+    
+    # this board has M7 instructions, but single precision only FPU
+    # we build as m4 as it makes for a smaller build, and given the 1M
+    # flash limit we care more about size
+    'CORTEX'    : 'cortex-m4',
+    'CPU_FLAGS' : '-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard'
 }
 
 DMA_Map = {

@@ -18,7 +18,11 @@
 
 #pragma once
 
-#include <AP_HAL/utility/Socket.h>
+#include "SIM_config.h"
+
+#if AP_SIM_CRRCSIM_ENABLED
+
+#include <AP_HAL/utility/Socket_native.h>
 
 #include "SIM_Aircraft.h"
 
@@ -29,14 +33,14 @@ namespace SITL {
  */
 class CRRCSim : public Aircraft {
 public:
-    CRRCSim(const char *home_str, const char *frame_str);
+    CRRCSim(const char *frame_str);
 
     /* update model by one time step */
     void update(const struct sitl_input &input) override;
 
     /* static object creator */
-    static Aircraft *create(const char *home_str, const char *frame_str) {
-        return new CRRCSim(home_str, frame_str);
+    static Aircraft *create(const char *frame_str) {
+        return NEW_NOTHROW CRRCSim(frame_str);
     }
 
 private:
@@ -73,7 +77,9 @@ private:
 
     bool heli_servos;
     double last_timestamp;
-    SocketAPM sock;
+    SocketAPM_native sock;
 };
 
 } // namespace SITL
+
+#endif  // AP_SIM_CRRCSIM_ENABLED

@@ -12,16 +12,18 @@ Then connect with ArduPilot like this:
 
   sim_vehicle.py --model morse --console --map
 
-This model assumes you will setup a skid-steering rover with left throttle on
-channel 1 and right throttle on channel 2, which means you need to set:
+This model assumes you will setup a steering/throttle rover 
 
-  SERVO1_FUNCTION 73
-  SERVO3_FUNCTION 74
+  SERVO1_FUNCTION 26
+  SERVO3_FUNCTION 70
 '''
+
+# flake8: noqa
+
 from morse.builder import *
 
-# use the ATRV rover
-vehicle = ATRV()
+# use the Hummer
+vehicle = Hummer()
 vehicle.properties(Object = True, Graspable = False, Label = "Vehicle")
 vehicle.translate(x=0.0, z=0.0)
 
@@ -55,12 +57,9 @@ all_sensors.add_stream('socket')
 
 vehicle.append(all_sensors)
 
-# make the vehicle controllable with speed and angular velocity
+# make the vehicle controllable with steer and force 
 # this will be available on port 60001 by default
-# an example command is:
-# {"v":2, "w":1}
-# which is 2m/s fwd, and rotating left at 1 radian/second
-motion = MotionVW()
+motion = SteerForce()
 vehicle.append(motion)
 motion.add_stream('socket')
 

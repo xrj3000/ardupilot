@@ -14,10 +14,11 @@
  */
 #pragma once
 
-#include "AP_WindVane.h"
+#include "AP_WindVane_config.h"
 
-#include <GCS_MAVLink/GCS.h>
-#include <Filter/Filter.h>
+#if AP_WINDVANE_ENABLED
+
+#include "AP_WindVane.h"
 
 class AP_WindVane_Backend
 {
@@ -38,15 +39,9 @@ public:
     virtual void calibrate();
 
 protected:
-    // update frontend
-    void speed_update_frontend(float apparent_speed_in);
-    void direction_update_frontend(float apparent_angle_ef);
 
     AP_WindVane &_frontend;
 
-private:
-    // low pass filters of direction and speed
-    LowPassFilterFloat _dir_sin_filt = LowPassFilterFloat(2.0f);
-    LowPassFilterFloat _dir_cos_filt = LowPassFilterFloat(2.0f);
-    LowPassFilterFloat _speed_filt = LowPassFilterFloat(2.0f);
 };
+
+#endif  // AP_WINDVANE_ENABLED

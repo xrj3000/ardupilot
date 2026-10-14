@@ -11,10 +11,19 @@
  *
  * You should have received a copy of the GNU General Public License along
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  */
 #pragma once
 
+#include <hal.h>
+
+namespace AP_HAL {
+class SPIDevice;
+}
+
 bool sdcard_init();
+bool sdcard_init_raw(uint8_t slowdown, uint8_t tries);
+BaseBlockDevice *sdcard_get_block_device();
 void sdcard_stop();
 bool sdcard_retry();
+AP_HAL::SPIDevice *sdcard_get_spi_device();

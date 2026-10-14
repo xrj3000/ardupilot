@@ -1,15 +1,22 @@
 #pragma once
 
-#include "RangeFinder.h"
-#include "RangeFinder_Backend.h"
+#include "AP_RangeFinder_config.h"
+
+#if AP_RANGEFINDER_VL53L1X_ENABLED
+
+#include "AP_RangeFinder.h"
+#include "AP_RangeFinder_Backend.h"
+
 #include <AP_HAL/I2CDevice.h>
 
 class AP_RangeFinder_VL53L1X : public AP_RangeFinder_Backend
 {
 
 public:
+    enum class DistanceMode { Short, Medium, Long, Unknown };
+
     // static detection function
-    static AP_RangeFinder_Backend *detect(RangeFinder::RangeFinder_State &_state, AP_RangeFinder_Params &_params, AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev);
+    static AP_RangeFinder_Backend *detect(RangeFinder::RangeFinder_State &_state, AP_RangeFinder_Params &_params, AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev, DistanceMode mode);
 
     // update state
     void update(void) override;
@@ -1242,7 +1249,7 @@ private:
     // constructor
     AP_RangeFinder_VL53L1X(RangeFinder::RangeFinder_State &_state, AP_RangeFinder_Params &_params, AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev);
 
-    bool init();
+    __INITFUNC__ bool init(DistanceMode mode);
     void timer();
 
     // check sensor ID
@@ -1267,7 +1274,6 @@ private:
     // used in DSS calculations
     static const uint16_t TargetRate = 0x0A00;
 
-    enum DistanceMode { Short, Medium, Long, Unknown };
     uint16_t fast_osc_frequency;
     uint16_t osc_calibrate_val;
     uint32_t sum_mm;
@@ -1280,6 +1286,7 @@ private:
     bool write_register16(uint16_t reg, uint16_t value) WARN_IF_UNUSED;
     bool write_register32(uint16_t reg, uint32_t value) WARN_IF_UNUSED;
     bool dataReady(void);
+    bool reset(void) WARN_IF_UNUSED;
     bool setDistanceMode(DistanceMode distance_mode) WARN_IF_UNUSED;
     bool setMeasurementTimingBudget(uint32_t budget_us) WARN_IF_UNUSED;
     bool getMeasurementTimingBudget(uint32_t &budget) WARN_IF_UNUSED;
@@ -1288,6 +1295,8 @@ private:
     uint16_t encodeTimeout(uint32_t timeout_mclks);
     uint32_t timeoutMclksToMicroseconds(uint32_t timeout_mclks, uint32_t macro_period_us);
     uint32_t timeoutMicrosecondsToMclks(uint32_t timeout_us, uint32_t macro_period_us);
-    uint32_t calcMacroPeriod(uint8_t vcsel_period);
+    uint32_t calcMacroPeriod(uint8_t vcsel_period) const;
     bool setupManualCalibration(void);
 };
+
+#endif  // AP_RANGEFINDER_VL53L1X_ENABLED

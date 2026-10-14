@@ -27,28 +27,58 @@
 
 extern const AP_HAL::HAL& hal;
 
+#ifndef HAL_IOMCU_DSM_SERIAL_DRIVER
+#define HAL_IOMCU_DSM_SERIAL_DRIVER SD1
+#endif
+
+#ifndef HAL_IOMCU_RCIN_SERIAL_DRIVER
+#define HAL_IOMCU_RCIN_SERIAL_DRIVER SD3
+#endif
+
+#ifndef HAL_IOMCU_SBUS_OUT_SERIAL_DRIVER
+#define HAL_IOMCU_SBUS_OUT_SERIAL_DRIVER SD3
+#endif
+
+#ifndef HAL_IOMCU_SEPARATE_SBUS_OUT_RCIN
+#define HAL_IOMCU_SEPARATE_SBUS_OUT_RCIN 0
+#endif
+
 // usart3 is for SBUS input and output
-static const SerialConfig uart3_cfg = {
+static const SerialConfig sbus_cfg = {
     100000,   // speed
     USART_CR1_PCE | USART_CR1_M, // cr1, enable even parity
-    USART_CR2_STOP_1,            // cr2, two stop bits
+    USART_CR2_STOP_1            // cr2, two stop bits
+#if defined(HAL_SERIAL_SBUS_SWAPPED) && HAL_SERIAL_SBUS_SWAPPED
+    | USART_CR2_SWAP
+#endif
+    ,
     0,        // cr3
     nullptr,  // irq_cb
     nullptr,  // ctx
 };
 
-// listen for parity errors on sd3 input
-static event_listener_t sd3_listener;
+// listen for parity errors on sbus out input
+static event_listener_t serial_rcin_listener;
+
+static uint8_t sbus_out_config;
+
+#if HAL_IOMCU_SEPARATE_SBUS_OUT_RCIN
+static uint8_t serial_rcin_config;
+#else
+#define serial_rcin_config sbus_out_config
+#endif
 
 void sbus_out_write(uint16_t *channels, uint8_t nchannels)
 {
-    uint8_t buffer[25];
-    AP_SBusOut::sbus_format_frame(channels, nchannels, buffer);
-    chnWrite(&SD3, buffer, sizeof(buffer));
+    if (sbus_out_config == 0) {
+        uint8_t buffer[25];
+        AP_SBusOut::sbus_format_frame(channels, nchannels, buffer);
+        chnWrite(&HAL_IOMCU_SBUS_OUT_SERIAL_DRIVER, buffer, sizeof(buffer));
+    }
 }
 
 // usart1 is for DSM input and (optionally) debug to FMU
-static const SerialConfig uart1_cfg = {
+static const SerialConfig dsm_cfg = {
     115200,   // speed
     0,        // cr1
     0,        // cr2
@@ -57,23 +87,39 @@ static const SerialConfig uart1_cfg = {
     nullptr,  // ctx
 };
 
+static enum {
+    RC_SEARCHING,
+    RC_DSM_PORT,
+    RC_SBUS_PORT
+} rc_state;
+
 /*
   init rcin on DSM USART1
  */
 void AP_IOMCU_FW::rcin_serial_init(void)
 {
-    sdStart(&SD1, &uart1_cfg);
-    sdStart(&SD3, &uart3_cfg);
-    chEvtRegisterMaskWithFlags(chnGetEventSource(&SD3),
-                               &sd3_listener,
+    sdStart(&HAL_IOMCU_DSM_SERIAL_DRIVER, &dsm_cfg);
+    sdStart(&HAL_IOMCU_SBUS_OUT_SERIAL_DRIVER, &sbus_cfg);
+
+#if HAL_IOMCU_SEPARATE_SBUS_OUT_RCIN
+    sdStart(&HAL_IOMCU_RCIN_SERIAL_DRIVER, &sbus_cfg);
+#endif
+
+    chEvtRegisterMaskWithFlags(chnGetEventSource(&HAL_IOMCU_RCIN_SERIAL_DRIVER),
+                               &serial_rcin_listener,
                                EVENT_MASK(1),
                                SD_PARITY_ERROR);
-    rcprotocol = AP_RCProtocol::get_singleton();
-
     // disable input for SBUS with pulses, we will use the UART for
-    // SBUS.
-    rcprotocol->disable_for_pulses(AP_RCProtocol::SBUS);
-    rcprotocol->disable_for_pulses(AP_RCProtocol::SBUS_NI);
+    // SBUS and FPORT
+#if AP_RCPROTOCOL_SBUS_ENABLED
+    AP::RC().disable_for_pulses(AP_RCProtocol::SBUS);
+#endif
+#if AP_RCPROTOCOL_SBUS_NI_ENABLED
+    AP::RC().disable_for_pulses(AP_RCProtocol::SBUS_NI);
+#endif
+#if AP_RCPROTOCOL_FPORT_ENABLED
+    AP::RC().disable_for_pulses(AP_RCProtocol::FPORT);
+#endif
 }
 
 static struct {
@@ -81,6 +127,7 @@ static struct {
     uint32_t num_sbus_bytes;
     uint32_t num_sbus_errors;
     eventflags_t sbus_error;
+    uint32_t last_good_ms;
 } rc_stats;
 
 /*
@@ -90,31 +137,69 @@ void AP_IOMCU_FW::rcin_serial_update(void)
 {
     uint8_t b[16];
     uint32_t n;
+    uint32_t now = AP_HAL::millis();
+    auto &rc = AP::RC();
+
+    if (rc.should_search(now)) {
+        rc_state = RC_SEARCHING;
+    }
 
     // read from DSM port
-    if ((n = chnReadTimeout(&SD1, b, sizeof(b), TIME_IMMEDIATE)) > 0) {
+    if ((rc_state == RC_SEARCHING || rc_state == RC_DSM_PORT) &&
+        (n = chnReadTimeout(&HAL_IOMCU_DSM_SERIAL_DRIVER, b, sizeof(b), TIME_IMMEDIATE)) > 0) {
         n = MIN(n, sizeof(b));
-        rc_stats.num_dsm_bytes += n;
-        for (uint8_t i=0; i<n; i++) {
-            rcprotocol->process_byte(b[i], 115200);
+        // don't mix two 115200 uarts
+        if (serial_rcin_config == 0) {
+            rc_stats.num_dsm_bytes += n;
+            for (uint8_t i=0; i<n; i++) {
+                if (rc.process_byte(b[i], 115200)) {
+                    rc_stats.last_good_ms = now;
+                    if (!rc.should_search(now)) {
+                        rc_state = RC_DSM_PORT;
+                    }
+                }
+            }
         }
         //BLUE_TOGGLE();
     }
 
     // read from SBUS port
-    if ((n = chnReadTimeout(&SD3, b, sizeof(b), TIME_IMMEDIATE)) > 0) {
+    if ((rc_state == RC_SEARCHING || rc_state == RC_SBUS_PORT) &&
+        (n = chnReadTimeout(&HAL_IOMCU_RCIN_SERIAL_DRIVER, b, sizeof(b), TIME_IMMEDIATE)) > 0) {
         eventflags_t flags;
-        if ((flags = chEvtGetAndClearFlags(&sd3_listener)) & SD_PARITY_ERROR) {
+        if (serial_rcin_config == 0 && ((flags = chEvtGetAndClearFlags(&serial_rcin_listener)) & SD_PARITY_ERROR)) {
             rc_stats.sbus_error = flags;
             rc_stats.num_sbus_errors++;
         } else {
             n = MIN(n, sizeof(b));
             rc_stats.num_sbus_bytes += n;
             for (uint8_t i=0; i<n; i++) {
-                rcprotocol->process_byte(b[i], 100000);
+                if (rc.process_byte(b[i], serial_rcin_config==0?100000:115200)) {
+                    rc_stats.last_good_ms = now;
+                    if (!rc.should_search(now)) {
+                        rc_state = RC_SBUS_PORT;
+                    }
+                }
             }
         }
     }
+    /*
+      when not using SBUS output we switch UART3 between 100000 baud
+      and 115200 baud in order to support RC input protocols that are
+      115200 inverted (such as FPort). If SBUS output is enabled then
+      we need to disable this as the uart is shared between input and
+      output
+     */
+#if !HAL_IOMCU_SEPARATE_SBUS_OUT_RCIN
+    const bool sbus_out_enabled = (reg_setup.features & P_SETUP_FEATURES_SBUS1_OUT) != 0;
+    if (rc_state == RC_SEARCHING &&
+        now - rc_stats.last_good_ms > 2000 && (sbus_out_config==1 || !sbus_out_enabled)) {
+        rc_stats.last_good_ms = now;
+        sbus_out_config ^= 1;
+        sdStop(&HAL_IOMCU_SBUS_OUT_SERIAL_DRIVER);
+        sdStart(&HAL_IOMCU_SBUS_OUT_SERIAL_DRIVER, sbus_out_config==0?&sbus_cfg:&dsm_cfg);
+    }
+#endif
 }
 
 /*
@@ -183,4 +268,3 @@ void AP_IOMCU_FW::dsm_bind_step(void)
         break;
     }
 }
-

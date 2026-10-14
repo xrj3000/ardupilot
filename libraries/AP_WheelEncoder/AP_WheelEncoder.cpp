@@ -15,6 +15,7 @@
 
 #include "AP_WheelEncoder.h"
 #include "WheelEncoder_Quadrature.h"
+#include "WheelEncoder_SITL_Quadrature.h"
 #include <AP_Logger/AP_Logger.h>
 
 extern const AP_HAL::HAL& hal;
@@ -24,7 +25,8 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @Param: _TYPE
     // @DisplayName: WheelEncoder type
     // @Description: What type of WheelEncoder is connected
-    // @Values: 0:None,1:Quadrature
+    // @Values: 0:None,1:Quadrature,10:SITL Quadrature
+    // @RebootRequired: True
     // @User: Standard
     AP_GROUPINFO_FLAGS("_TYPE", 0, AP_WheelEncoder, _type[0], 0, AP_PARAM_FLAG_ENABLE),
 
@@ -47,6 +49,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel's X position offset
     // @Description: X position of the center of the wheel in body frame. Positive X is forward of the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
 
@@ -54,6 +57,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel's Y position offset
     // @Description: Y position of the center of the wheel in body frame. Positive Y is to the right of the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
 
@@ -61,6 +65,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel's Z position offset
     // @Description: Z position of the center of the wheel in body frame. Positive Z is down from the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
     AP_GROUPINFO("_POS",     3, AP_WheelEncoder, _pos_offset[0], 0.0f),
@@ -68,22 +73,25 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @Param: _PINA
     // @DisplayName: Input Pin A
     // @Description: Input Pin A
-    // @Values: -1:Disabled,50:PixhawkAUX1,51:PixhawkAUX2,52:PixhawkAUX3,53:PixhawkAUX4,54:PixhawkAUX5,55:PixhawkAUX6
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @Range: -1 127
     // @User: Standard
-    AP_GROUPINFO("_PINA",    4, AP_WheelEncoder, _pina[0], 55),
+    AP_GROUPINFO("_PINA",    4, AP_WheelEncoder, _pina[0], -1),
 
     // @Param: _PINB
     // @DisplayName: Input Pin B
     // @Description: Input Pin B
-    // @Values: -1:Disabled,50:PixhawkAUX1,51:PixhawkAUX2,52:PixhawkAUX3,53:PixhawkAUX4,54:PixhawkAUX5,55:PixhawkAUX6
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @Range: -1 127
     // @User: Standard
-    AP_GROUPINFO("_PINB",    5, AP_WheelEncoder, _pinb[0], 54),
+    AP_GROUPINFO("_PINB",    5, AP_WheelEncoder, _pinb[0], -1),
 
 #if WHEELENCODER_MAX_INSTANCES > 1
     // @Param: 2_TYPE
     // @DisplayName: Second WheelEncoder type
     // @Description: What type of WheelEncoder sensor is connected
-    // @Values: 0:None,1:Quadrature
+    // @Values: 0:None,1:Quadrature,10:SITL Quadrature
+    // @RebootRequired: True
     // @User: Standard
     AP_GROUPINFO("2_TYPE",   6, AP_WheelEncoder, _type[1], 0),
 
@@ -106,6 +114,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel2's X position offset
     // @Description: X position of the center of the second wheel in body frame. Positive X is forward of the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
 
@@ -113,6 +122,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel2's Y position offset
     // @Description: Y position of the center of the second wheel in body frame. Positive Y is to the right of the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
 
@@ -120,6 +130,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel2's Z position offset
     // @Description: Z position of the center of the second wheel in body frame. Positive Z is down from the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
     AP_GROUPINFO("2_POS",    9, AP_WheelEncoder, _pos_offset[1], 0.0f),
@@ -127,14 +138,16 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @Param: 2_PINA
     // @DisplayName: Second Encoder Input Pin A
     // @Description: Second Encoder Input Pin A
-    // @Values: -1:Disabled,50:PixhawkAUX1,51:PixhawkAUX2,52:PixhawkAUX3,53:PixhawkAUX4,54:PixhawkAUX5,55:PixhawkAUX6
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @Range: -1 127
     // @User: Standard
     AP_GROUPINFO("2_PINA",   10, AP_WheelEncoder, _pina[1], 53),
 
     // @Param: 2_PINB
     // @DisplayName: Second Encoder Input Pin B
     // @Description: Second Encoder Input Pin B
-    // @Values: -1:Disabled,50:PixhawkAUX1,51:PixhawkAUX2,52:PixhawkAUX3,53:PixhawkAUX4,54:PixhawkAUX5,55:PixhawkAUX6
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @Range: -1 127
     // @User: Standard
     AP_GROUPINFO("2_PINB",   11, AP_WheelEncoder, _pinb[1], 52),
 #endif
@@ -144,6 +157,8 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
 
 AP_WheelEncoder::AP_WheelEncoder(void)
 {
+    _singleton = this;
+
     AP_Param::setup_object_defaults(this, var_info);
 }
 
@@ -155,15 +170,24 @@ void AP_WheelEncoder::init(void)
         return;
     }
     for (uint8_t i=0; i<WHEELENCODER_MAX_INSTANCES; i++) {
-#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
         switch ((WheelEncoder_Type)_type[i].get()) {
+
         case WheelEncoder_TYPE_QUADRATURE:
-            drivers[i] = new AP_WheelEncoder_Quadrature(*this, i, state[i]);
+#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
+            drivers[i] = NEW_NOTHROW AP_WheelEncoder_Quadrature(*this, i, state[i]);
+#endif
             break;
+
+        case WheelEncoder_TYPE_SITL_QUADRATURE:
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+            drivers[i] = NEW_NOTHROW AP_WheelEncoder_SITL_Quadrature(*this, i, state[i]);
+#endif
+            break;
+            
         case WheelEncoder_TYPE_NONE:
             break;
         }
-#endif
+
 
         if (drivers[i] != nullptr) {
             // we loaded a driver for this instance, so it must be
@@ -183,8 +207,9 @@ void AP_WheelEncoder::update(void)
     }
 }
 
+#if HAL_LOGGING_ENABLED
 // log wheel encoder information
-void AP_WheelEncoder::Log_Write()
+void AP_WheelEncoder::Log_Write() const
 {
     // return immediately if no wheel encoders are enabled
     if (!enabled(0) && !enabled(1)) {
@@ -201,6 +226,7 @@ void AP_WheelEncoder::Log_Write()
     };
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
 }
+#endif
 
 // check if an instance is healthy
 bool AP_WheelEncoder::healthy(uint8_t instance) const
@@ -330,4 +356,16 @@ uint32_t AP_WheelEncoder::get_last_reading_ms(uint8_t instance) const
         return 0;
     }
     return state[instance].last_reading_ms;
+}
+
+// singleton instance
+AP_WheelEncoder *AP_WheelEncoder::_singleton;
+
+namespace AP {
+
+AP_WheelEncoder *wheelencoder()
+{
+    return AP_WheelEncoder::get_singleton();
+}
+
 }

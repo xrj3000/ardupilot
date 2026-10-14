@@ -11,12 +11,16 @@
  *
  * You should have received a copy of the GNU General Public License along
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Code by Andrew Tridgell and Siddharth Bharat Purohit
  */
+
 #include <AP_HAL/AP_HAL.h>
 #include "Semaphores.h"
+#include <hal.h>
+#include <chsem.h>
 #include "AP_HAL_ChibiOS.h"
+#include <AP_Math/AP_Math.h>
 
 #if CH_CFG_USE_MUTEXES == TRUE
 
@@ -49,6 +53,9 @@ bool Semaphore::take(uint32_t timeout_ms)
     if (take_nonblocking()) {
         return true;
     }
+#ifdef HAL_BOOTLOADER_BUILD
+    return false;
+#else
     uint64_t start = AP_HAL::micros64();
     do {
         hal.scheduler->delay_microseconds(200);
@@ -57,6 +64,7 @@ bool Semaphore::take(uint32_t timeout_ms)
         }
     } while ((AP_HAL::micros64() - start) < timeout_ms*1000);
     return false;
+#endif
 }
 
 bool Semaphore::take_nonblocking()
@@ -76,78 +84,57 @@ void Semaphore::assert_owner(void)
     osalDbgAssert(check_owner(), "owner");
 }
 
-// constructor
-Semaphore_Recursive::Semaphore_Recursive()
-    : Semaphore(), count(0)
-{}
-
-
-bool Semaphore_Recursive::give()
+#if CH_CFG_USE_SEMAPHORES == TRUE
+BinarySemaphore::BinarySemaphore(bool initial_state) :
+    AP_HAL::BinarySemaphore(initial_state)
 {
-    chSysLock();
-    mutex_t *mtx = (mutex_t *)_lock;
-    osalDbgAssert(count>0, "recursive semaphore");
-    if (count != 0) {
-        count--;
-        if (count == 0) {
-            // this thread is giving it up
-            chMtxUnlockS(mtx);
-            // we may need to re-schedule if our priority was increased due to
-            // priority inheritance
-            chSchRescheduleS();
+    static_assert(sizeof(_lock) >= sizeof(semaphore_t), "invalid semaphore_t size");
+    auto *sem = (binary_semaphore_t *)_lock;
+    /*
+      the initial_state in ChibiOS binary semaphores is 'taken', so we
+      need to negate it for the ArduPilot semantics
+     */
+    chBSemObjectInit(sem, !initial_state);
+}
+
+bool BinarySemaphore::wait(uint32_t timeout_us)
+{
+    auto *sem = (binary_semaphore_t *)_lock;
+    if (timeout_us == 0) {
+        return chBSemWaitTimeout(sem, TIME_IMMEDIATE) == MSG_OK;
+    }
+    // loop waiting for 60ms at a time. This ensures we can wait for
+    // any amount of time even on systems with a 16 bit timer
+    while (timeout_us > 0) {
+        const uint32_t us = MIN(timeout_us, 60000U);
+        if (chBSemWaitTimeout(sem, TIME_US2I(us)) == MSG_OK) {
+            return true;
         }
-    }
-    chSysUnlock();
-    return true;
-}
-
-bool Semaphore_Recursive::take(uint32_t timeout_ms)
-{
-    // most common case is we can get the lock immediately
-    if (Semaphore::take_nonblocking()) {
-        count=1;
-        return true;
-    }
-
-    // check for case where we hold it already
-    chSysLock();
-    mutex_t *mtx = (mutex_t *)_lock;
-    if (mtx->owner == chThdGetSelfX()) {
-        count++;
-        chSysUnlock();
-        return true;
-    }
-    chSysUnlock();
-    if (Semaphore::take(timeout_ms)) {
-        count = 1;
-        return true;
+        timeout_us -= us;
     }
     return false;
 }
 
-bool Semaphore_Recursive::take_nonblocking(void)
+bool BinarySemaphore::wait_blocking(void)
 {
-    // most common case is we can get the lock immediately
-    if (Semaphore::take_nonblocking()) {
-        count=1;
-        return true;
-    }
-
-    // check for case where we hold it already
-    chSysLock();
-    mutex_t *mtx = (mutex_t *)_lock;
-    if (mtx->owner == chThdGetSelfX()) {
-        count++;
-        chSysUnlock();
-        return true;
-    }
-    chSysUnlock();
-    if (Semaphore::take_nonblocking()) {
-        count = 1;
-        return true;
-    }
-    return false;
+    auto *sem = (binary_semaphore_t *)_lock;
+    return chBSemWait(sem) == MSG_OK;
 }
+
+void BinarySemaphore::signal(void)
+{
+    auto *sem = (binary_semaphore_t *)_lock;
+    chBSemSignal(sem);
+}
+
+void BinarySemaphore::signal_ISR(void)
+{
+    auto *sem = (binary_semaphore_t *)_lock;
+    chSysLockFromISR();
+    chBSemSignalI(sem);
+    chSysUnlockFromISR();
+}
+
+#endif // CH_CFG_USE_SEMAPHORES == TRUE
 
 #endif // CH_CFG_USE_MUTEXES
-

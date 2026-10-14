@@ -14,12 +14,16 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include <AP_AHRS/AP_AHRS.h>
+
+#include "GCS_config.h"
+
+#if HAL_GCS_ENABLED
+
 #include <AP_HAL/AP_HAL.h>
 
-#include "AP_Common/AP_FWVersion.h"
 #include "GCS.h"
 #include <AP_Logger/AP_Logger.h>
+#include <AP_BoardConfig/AP_BoardConfig.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -36,27 +40,28 @@ bool GCS_MAVLINK::param_timer_registered;
 void
 GCS_MAVLINK::queued_param_send()
 {
-    if (!initialised) {
-        return;
-    }
-
     // send parameter async replies
     uint8_t async_replies_sent_count = send_parameter_async_replies();
+
+    // now send the streaming parameters (from PARAM_REQUEST_LIST)
+    if (_queued_parameter == nullptr) {
+        // .... or not....
+        return;
+    }
 
     const uint32_t tnow = AP_HAL::millis();
     const uint32_t tstart = AP_HAL::micros();
 
-    // use at most 30% of bandwidth on parameters. The constant 26 is
-    // 1/(1000 * 1/8 * 0.001 * 0.3)
-    const uint32_t link_bw = _port->bw_in_kilobytes_per_second();
+    // use at most 30% of bandwidth on parameters
+    const uint32_t link_bw = _port->bw_in_bytes_per_second();
 
-    uint32_t bytes_allowed = link_bw * (tnow - _queued_parameter_send_time_ms) * 26;
+    uint32_t bytes_allowed = link_bw * (tnow - _queued_parameter_send_time_ms) / 3333;
     const uint16_t size_for_one_param_value_msg = MAVLINK_MSG_ID_PARAM_VALUE_LEN + packet_overhead();
     if (bytes_allowed < size_for_one_param_value_msg) {
         bytes_allowed = size_for_one_param_value_msg;
     }
-    if (bytes_allowed > comm_get_txspace(chan)) {
-        bytes_allowed = comm_get_txspace(chan);
+    if (bytes_allowed > txspace()) {
+        bytes_allowed = txspace();
     }
     uint32_t count = bytes_allowed / size_for_one_param_value_msg;
 
@@ -70,11 +75,7 @@ GCS_MAVLINK::queued_param_send()
     }
     count -= async_replies_sent_count;
 
-    if (_queued_parameter == nullptr) {
-        return;
-    }
-
-    while (count && _queued_parameter != nullptr) {
+    while (count && _queued_parameter != nullptr && last_txbuf_is_greater(33)) {
         char param_name[AP_MAX_NAME_SIZE];
         _queued_parameter->copy_name_token(_queued_parameter_token, param_name, sizeof(param_name), true);
 
@@ -107,7 +108,7 @@ bool GCS_MAVLINK::have_flow_control(void)
         return false;
     }
 
-    if (_port->get_flow_control() != AP_HAL::UARTDriver::FLOW_CONTROL_DISABLE) {
+    if (_port->flow_control_enabled()) {
         return true;
     }
 
@@ -125,10 +126,10 @@ bool GCS_MAVLINK::have_flow_control(void)
   save==false so we don't want the save to happen when the user connects the
   ground station.
  */
-void GCS_MAVLINK::handle_request_data_stream(mavlink_message_t *msg)
+void GCS_MAVLINK::handle_request_data_stream(const mavlink_message_t &msg)
 {
     mavlink_request_data_stream_t packet;
-    mavlink_msg_request_data_stream_decode(msg, &packet);
+    mavlink_msg_request_data_stream_decode(&msg, &packet);
 
     int16_t freq = 0;     // packet frequency
 
@@ -202,14 +203,14 @@ void GCS_MAVLINK::handle_request_data_stream(mavlink_message_t *msg)
     }
 }
 
-void GCS_MAVLINK::handle_param_request_list(mavlink_message_t *msg)
+void GCS_MAVLINK::handle_param_request_list(const mavlink_message_t &msg)
 {
     if (!params_ready()) {
         return;
     }
 
     mavlink_param_request_list_t packet;
-    mavlink_msg_param_request_list_decode(msg, &packet);
+    mavlink_msg_param_request_list_decode(&msg, &packet);
 
     // requesting parameters is a convenient way to get extra information
     send_banner();
@@ -221,7 +222,7 @@ void GCS_MAVLINK::handle_param_request_list(mavlink_message_t *msg)
     _queued_parameter_send_time_ms = AP_HAL::millis(); // avoid initial flooding
 }
 
-void GCS_MAVLINK::handle_param_request_read(mavlink_message_t *msg)
+void GCS_MAVLINK::handle_param_request_read(const mavlink_message_t &msg)
 {
     if (param_requests.space() == 0) {
         // we can't process this right now, drop it
@@ -229,7 +230,7 @@ void GCS_MAVLINK::handle_param_request_read(mavlink_message_t *msg)
     }
     
     mavlink_param_request_read_t packet;
-    mavlink_msg_param_request_read_decode(msg, &packet);
+    mavlink_msg_param_request_read_decode(&msg, &packet);
 
     /*
       we reserve some space for sending parameters if the client ever
@@ -244,6 +245,8 @@ void GCS_MAVLINK::handle_param_request_read(mavlink_message_t *msg)
     }
 
     struct pending_param_request req;
+    req.src_system_id = msg.sysid;
+    req.src_component_id = msg.compid;
     req.chan = chan;
     req.param_index = packet.param_index;
     memcpy(req.param_name, packet.param_id, MIN(sizeof(packet.param_id), sizeof(req.param_name)));
@@ -259,10 +262,10 @@ void GCS_MAVLINK::handle_param_request_read(mavlink_message_t *msg)
     }
 }
 
-void GCS_MAVLINK::handle_param_set(mavlink_message_t *msg)
+void GCS_MAVLINK::handle_param_set(const mavlink_message_t &msg)
 {
     mavlink_param_set_t packet;
-    mavlink_msg_param_set_decode(msg, &packet);
+    mavlink_msg_param_set_decode(&msg, &packet);
     enum ap_var_type var_type;
 
     // set parameter
@@ -272,11 +275,32 @@ void GCS_MAVLINK::handle_param_set(mavlink_message_t *msg)
     key[AP_MAX_NAME_SIZE] = 0;
 
     // find existing param so we can get the old value
-    vp = AP_Param::find(key, &var_type);
+    uint16_t parameter_flags = 0;
+    vp = AP_Param::find(key, &var_type, &parameter_flags);
     if (vp == nullptr) {
+        send_param_error(msg, packet, MAV_PARAM_ERROR_DOES_NOT_EXIST);
         return;
     }
+    if (isnan(packet.param_value) || isinf(packet.param_value)) {
+        send_param_error(msg, packet, MAV_PARAM_ERROR_VALUE_OUT_OF_RANGE);
+        return;
+    }
+
     float old_value = vp->cast_to_float(var_type);
+
+    if (!vp->allow_set_via_mavlink(parameter_flags)) {
+        // don't warn the user about this failure if we are dropping
+        // messages here.  This is on the assumption that scripting is
+        // currently responsible for setting parameters and may set
+        // the value instead of us.
+        if (gcs().get_allow_param_set()) {
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Param write denied (%s)", key);
+            send_param_error(msg, packet, MAV_PARAM_ERROR_PERMISSION_DENIED);
+        }
+        // send the readonly value
+        send_parameter_value(key, var_type, old_value);
+        return;
+    }
 
     // set the value
     vp->set_float(packet.param_value, var_type);
@@ -293,10 +317,30 @@ void GCS_MAVLINK::handle_param_set(mavlink_message_t *msg)
     // save the change
     vp->save(force_save);
 
+    if (force_save && (parameter_flags & AP_PARAM_FLAG_ENABLE)) {
+        AP_Param::invalidate_count();
+    }
+
+#if HAL_LOGGING_ENABLED
     AP_Logger *logger = AP_Logger::get_singleton();
     if (logger != nullptr) {
         logger->Write_Parameter(key, vp->cast_to_float(var_type));
     }
+#endif
+}
+
+void GCS_MAVLINK::send_parameter_value(const char *param_name, ap_var_type param_type, float param_value)
+{
+    if (!HAVE_PAYLOAD_SPACE(chan, PARAM_VALUE)) {
+        return;
+    }
+    mavlink_msg_param_value_send(
+        chan,
+        param_name,
+        param_value,
+        mav_param_type(param_type),
+        AP_Param::count_parameters(),
+        -1);
 }
 
 /*
@@ -304,26 +348,24 @@ void GCS_MAVLINK::handle_param_set(mavlink_message_t *msg)
  */
 void GCS::send_parameter_value(const char *param_name, ap_var_type param_type, float param_value)
 {
-    const uint8_t mavlink_active = GCS_MAVLINK::active_channel_mask();
-    for (uint8_t i=0; i<MAVLINK_COMM_NUM_BUFFERS; i++) {
-        if ((1U<<i) & mavlink_active) {
-            const mavlink_channel_t _chan = (mavlink_channel_t)(MAVLINK_COMM_0+i);
-            if (HAVE_PAYLOAD_SPACE(_chan, PARAM_VALUE)) {
-                mavlink_msg_param_value_send(
-                    _chan,
-                    param_name,
-                    param_value,
-                    mav_param_type(param_type),
-                    AP_Param::count_parameters(),
-                    -1);
-            }
-        }
-    }
+    mavlink_param_value_t packet{};
+    const uint8_t to_copy = MIN(ARRAY_SIZE(packet.param_id), strlen(param_name));
+    memcpy(packet.param_id, param_name, to_copy);
+    packet.param_value = param_value;
+    packet.param_type = GCS_MAVLINK::mav_param_type(param_type);
+    packet.param_count = AP_Param::count_parameters();
+    packet.param_index = -1;
+
+    gcs().send_to_active_channels(MAVLINK_MSG_ID_PARAM_VALUE,
+                                  (const char *)&packet);
+
+#if HAL_LOGGING_ENABLED
     // also log to AP_Logger
     AP_Logger *logger = AP_Logger::get_singleton();
     if (logger != nullptr) {
         logger->Write_Parameter(param_name, param_value);
     }
+#endif
 }
 
 
@@ -352,28 +394,75 @@ void GCS_MAVLINK::param_io_timer(void)
     AP_Param *vp;
 
     if (req.param_index != -1) {
-        AP_Param::ParamToken token;
+        AP_Param::ParamToken token {};
         vp = AP_Param::find_by_index(req.param_index, &reply.p_type, &token);
-        if (vp == nullptr) {
-            return;
+        if (vp != nullptr) {
+            vp->copy_name_token(token, reply.param_name, AP_MAX_NAME_SIZE, true);
+        } else {
+            memset(reply.param_name, '\0', sizeof(reply.param_name));
         }
-        vp->copy_name_token(token, reply.param_name, AP_MAX_NAME_SIZE, true);
     } else {
         strncpy(reply.param_name, req.param_name, AP_MAX_NAME_SIZE+1);
         vp = AP_Param::find(req.param_name, &reply.p_type);
-        if (vp == nullptr) {
-            return;
-        }
     }
 
     reply.chan = req.chan;
+    reply.src_system_id = req.src_system_id;
+    reply.src_component_id = req.src_component_id;
     reply.param_name[AP_MAX_NAME_SIZE] = 0;
-    reply.value = vp->cast_to_float(reply.p_type);
+    if (vp != nullptr) {
+        reply.value = vp->cast_to_float(reply.p_type);
+        reply.param_error = MAV_PARAM_ERROR_NO_ERROR;
+    } else {
+        reply.value = NaNf;
+        reply.param_error = MAV_PARAM_ERROR_DOES_NOT_EXIST;
+    }
     reply.param_index = req.param_index;
     reply.count = AP_Param::count_parameters();
 
     // queue for transmission
     param_replies.push(reply);
+}
+
+/*
+  A variant of send_param_error which sends based off the received mavlink message information
+ */
+void GCS_MAVLINK::send_param_error(const mavlink_message_t &msg, const mavlink_param_set_t &param_set, MAV_PARAM_ERROR error)
+{
+    if (!HAVE_PAYLOAD_SPACE(chan, PARAM_ERROR)) {
+        return;
+    }
+    char param_id[MAVLINK_MSG_PARAM_ERROR_FIELD_PARAM_ID_LEN] {};
+    strncpy_noterm(param_id, param_set.param_id, ARRAY_SIZE(param_id));
+    mavlink_msg_param_error_send(
+        chan,
+        msg.sysid,
+        msg.compid,
+        param_id,
+        -1,
+        error
+        );
+}
+
+/*
+  A variant of send_param_error which is sent based on what the
+  parameter set thread returns
+ */
+void GCS_MAVLINK::send_param_error(const GCS_MAVLINK::pending_param_reply &reply, MAV_PARAM_ERROR error)
+{
+    if (!HAVE_PAYLOAD_SPACE(chan, PARAM_ERROR)) {
+        return;
+    }
+    char param_id[MAVLINK_MSG_PARAM_ERROR_FIELD_PARAM_ID_LEN] {};
+    strncpy_noterm(param_id, reply.param_name, ARRAY_SIZE(param_id));
+    mavlink_msg_param_error_send(
+        chan,
+        reply.src_system_id,
+        reply.src_component_id,
+        param_id,
+        reply.param_index,
+        error
+        );
 }
 
 /*
@@ -384,9 +473,16 @@ uint8_t GCS_MAVLINK::send_parameter_async_replies()
     uint8_t async_replies_sent_count = 0;
 
     while (async_replies_sent_count < 5) {
-        if (param_replies.empty()) {
-            // nothing to do
+        struct pending_param_reply reply;
+        if (!param_replies.peek(reply)) {
             return async_replies_sent_count;
+        }
+
+        uint16_t required_space;
+        if (reply.param_error == MAV_PARAM_ERROR_NO_ERROR) {
+            required_space = PAYLOAD_SIZE(chan, PARAM_VALUE);
+        } else {
+            required_space = PAYLOAD_SIZE(chan, PARAM_ERROR);
         }
 
         /*
@@ -395,35 +491,39 @@ uint8_t GCS_MAVLINK::send_parameter_async_replies()
         */
         uint32_t saved_reserve_param_space_start_ms = reserve_param_space_start_ms;
         reserve_param_space_start_ms = 0; // bypass packet_overhead_chan reservation checking
-        if (!HAVE_PAYLOAD_SPACE(chan, PARAM_VALUE)) {
+        if (txspace() < required_space) {
+            out_of_space_to_send();
             reserve_param_space_start_ms = AP_HAL::millis();
             return async_replies_sent_count;
         }
         reserve_param_space_start_ms = saved_reserve_param_space_start_ms;
 
-        struct pending_param_reply reply;
-        if (!param_replies.pop(reply)) {
-            // internal error
-            return async_replies_sent_count;
+        if (reply.param_error == MAV_PARAM_ERROR_NO_ERROR) {
+            mavlink_msg_param_value_send(
+                reply.chan,
+                reply.param_name,
+                reply.value,
+                mav_param_type(reply.p_type),
+                reply.count,
+                reply.param_index);
+        } else {
+            send_param_error(reply, reply.param_error);
         }
-
-        mavlink_msg_param_value_send(
-            reply.chan,
-            reply.param_name,
-            reply.value,
-            mav_param_type(reply.p_type),
-            reply.count,
-            reply.param_index);
 
         _queued_parameter_send_time_ms = AP_HAL::millis();
         async_replies_sent_count++;
+
+        if (!param_replies.pop()) {
+            // internal error...
+            return async_replies_sent_count;
+        }
     }
     return async_replies_sent_count;
 }
 
-void GCS_MAVLINK::handle_common_param_message(mavlink_message_t *msg)
+void GCS_MAVLINK::handle_common_param_message(const mavlink_message_t &msg)
 {
-    switch (msg->msgid) {
+    switch (msg.msgid) {
     case MAVLINK_MSG_ID_PARAM_REQUEST_LIST:
         handle_param_request_list(msg);
         break;
@@ -435,3 +535,5 @@ void GCS_MAVLINK::handle_common_param_message(mavlink_message_t *msg)
         break;
     }
 }
+
+#endif  // HAL_GCS_ENABLED

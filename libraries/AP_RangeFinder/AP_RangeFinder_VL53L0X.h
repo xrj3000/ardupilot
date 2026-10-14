@@ -1,7 +1,11 @@
 #pragma once
 
-#include "RangeFinder.h"
-#include "RangeFinder_Backend.h"
+#include "AP_RangeFinder_config.h"
+
+#if AP_RANGEFINDER_VL53L0X_ENABLED
+
+#include "AP_RangeFinder.h"
+#include "AP_RangeFinder_Backend.h"
 #include <AP_HAL/I2CDevice.h>
 
 class AP_RangeFinder_VL53L0X : public AP_RangeFinder_Backend
@@ -24,7 +28,7 @@ private:
     // constructor
     AP_RangeFinder_VL53L0X(RangeFinder::RangeFinder_State &_state, AP_RangeFinder_Params &_params, AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev);
 
-    bool init();
+    __INITFUNC__ bool init();
     void timer();
 
     // check sensor ID
@@ -80,3 +84,5 @@ private:
     uint32_t sum_mm;
     uint32_t counter;
 };
+
+#endif  // AP_RANGEFINDER_VL53L0X_ENABLED

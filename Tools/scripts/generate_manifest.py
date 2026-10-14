@@ -1,50 +1,112 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
-from __future__ import print_function
+'''
+AP_FLAKE8_CLEAN
+'''
 
-import sys
+import fnmatch
+import gzip
 import json
 import os
+import pathlib
 import re
-import fnmatch
+import shutil
+import subprocess
+import sys
+
 import gen_stable
 
-FIRMWARE_TYPES = ["AntennaTracker", "Copter", "Plane", "Rover", "Sub"]
-RELEASE_TYPES = ["beta", "latest", "stable", "stable-*"]
+FIRMWARE_TYPES = ["AntennaTracker", "Copter", "Plane", "Rover", "Sub", "AP_Periph", "Blimp"]
+RELEASE_TYPES = ["beta", "latest", "stable", "stable-*", "dirty"]
 
 # mapping for board names to brand name and manufacturer
 brand_map = {
     'Pixhawk4' : ('Pixhawk 4', 'Holybro'),
-    'Pixhawk6' : ('Pixhawk 6', 'Holybro'),
+    'Pixhawk4-bdshot' : ('Pixhawk 4', 'Holybro'),
+    'Pix32v5' :  ('Pix32 v5', 'Holybro'),
+    'Durandal' : ('Durandal', 'Holybro'),
+    'Durandal-bdshot' : ('Durandal', 'Holybro'),
     'PH4-mini' : ('Pixhawk 4 Mini', 'Holybro'),
     'KakuteF4' : ('KakuteF4', 'Holybro'),
     'KakuteF7' : ('KakuteF7', 'Holybro'),
+    'KakuteF7Mini' : ('KakuteF7Mini', 'Holybro'),
+    'KakuteF4Mini' : ('KakuteF4Mini', 'Holybro'),
+    'KakuteH7Mini' : ('KakuteH7Mini', 'Holybro'),
+    'KakuteH7Mini-Nand' : ('KakuteH7Mini-Nand', 'Holybro'),
+    'KakuteH7' : ('KakuteH7', 'Holybro'),
+    'KakuteH7-bdshot' : ('KakuteH7', 'Holybro'),
+    'KakuteH7v2' : ('KakuteH7v2', 'Holybro'),
     'CubeBlack' : ('CubeBlack', 'Hex/ProfiCNC'),
     'CubeYellow' : ('CubeYellow', 'Hex/ProfiCNC'),
     'CubeOrange' : ('CubeOrange', 'Hex/ProfiCNC'),
+    'CubeOrange-bdshot' : ('CubeOrange', 'Hex/ProfiCNC'),
     'CubePurple' : ('CubePurple', 'Hex/ProfiCNC'),
     'CubeSolo' : ('CubeSolo', '3DR'),
     'CubeGreen-solo' : ('CubeGreen Solo', 'Hex/ProfiCNC'),
     'CUAVv5' : ('CUAVv5', 'CUAV'),
+    'CUAVv5-bdshot' : ('CUAVv5', 'CUAV'),
     'CUAVv5Nano' : ('CUAVv5 Nano', 'CUAV'),
+    'CUAVv5Nano-bdshot' : ('CUAVv5 Nano', 'CUAV'),
+    'CUAV-Nora' : ('CUAV Nora', 'CUAV'),
+    'CUAV-Nora-bdshot' : ('CUAV Nora', 'CUAV'),
+    'CUAV-X7' : ('CUAV X7', 'CUAV'),
+    'CUAV-X7-bdshot' : ('CUAV X7', 'CUAV'),
     'DrotekP3Pro' : ('Pixhawk 3 Pro', 'Drotek'),
+    'MambaF405v2' : ('Diatone Mamba F405 MK2', 'Diatone'),
     'MatekF405' : ('Matek F405', 'Matek'),
+    'MatekF405-bdshot' : ('Matek F405', 'Matek'),
     'MatekF405-STD' : ('Matek F405 STD', 'Matek'),
     'MatekF405-Wing' : ('Matek F405 Wing', 'Matek'),
+    'MatekF765-SE' : ('Matek F765 SE', 'Matek'),
+    'MatekH743' : ('Matek H743', 'Matek'),
+    'MatekH743-bdshot' : ('Matek H743', 'Matek'),
     'mini-pix' : ('MiniPix', 'Radiolink'),
     'Pixhawk1' : ('Pixhawk1', 'mRobotics'),
     'Pixracer' : ('PixRacer', 'mRobotics'),
+    'Pixracer-bdshot' : ('PixRacer', 'mRobotics'),
     'mRoX21' : ('mRo X2.1', 'mRobotics'),
     'mRoX21-777' : ('mRo X2.1-777', 'mRobotics'),
+    'mRoPixracerPro' : ('mRo PixracerPro', 'mRobotics'),
+    'mRoPixracerPro-bdshot' : ('mRo PixracerPro', 'mRobotics'),
+    'mRoControlZeroOEMH7' : ('mRo ControlZero OEM H7', 'mRobotics'),
+    'mRoNexus' : ('mRo Nexus', 'mRobotics'),
     'TBS-Colibri-F7' : ('Colibri F7', 'TBS'),
     'sparky2' : ('Sparky2', 'TauLabs'),
     'mindpx-v2' : ('MindPX V2', 'AirMind'),
     'OMNIBUSF7V2' : ('Omnibus F7 V2', 'Airbot'),
     'omnibusf4pro' : ('Omnibus F4 Pro', 'Airbot'),
+    'omnibusf4pro-bdshot' : ('Omnibus F4 Pro', 'Airbot'),
     'omnibusf4v6' : ('Omnibus F4 V6', 'Airbot'),
     'OmnibusNanoV6' : ('Omnibus Nano V6', 'Airbot'),
+    'OmnibusNanoV6-bdshot' : ('Omnibus Nano V6', 'Airbot'),
     'speedybeef4' : ('SpeedyBee F4', 'SpeedyBee'),
+    'speedybeef4v3' : ('SpeedyBee F4 v3', 'SpeedyBee'),
+    'QioTekZealotF427' : ('ZealotF427', 'QioTek'),
+    'BeastH7' : ('Beast H7 55A AIO', 'iFlight'),
+    'BeastH7v2' : ('Beast H7 v2 55A AIO', 'iFlight'),
+    'BeastF7' : ('Beast F7 45A AIO', 'iFlight'),
+    'BeastF7v2' : ('Beast F7 v2 55A AIO', 'iFlight'),
+    'MambaF405US-I2C' : ('Diatone Mamba Basic F405 MK3/MK3.5', 'Diatone'),
+    'MambaF405-2022' : ('Diatone Mamba Basic F405 MK4', 'Diatone'),
+    'MambaH743v4' : ('Diatone Mamba H743 MK4', 'Diatone'),
+    "FlywooF745" : ('Flywoo Goku GN 745 AIO', 'Flywoo'),
+    "FlywooF745Nano" : ('Flywoo Goku Hex F745', 'Flywoo'),
+    "modalai_fc-v1" : ('ModalAI FlightCore v1', 'ModalAI'),
+    'Pixhawk5X' : ('Pixhawk 5X', 'Holybro'),
+    "AIRLink" : ("AIRLink", "Sky-Drones Technologies"),
+    "SPRacingH7" : ("H7 Extreme", "Seriously Pro Racing"),
+    "SkystarsH7HD" : ("H743 HD", "Skystars"),
+    "SkystarsH7HD-bdshot" : ("H743 HD", "Skystars"),
+    "MicoAir405v2" : ("MicoAir F405 v2.1", "MicoAir"),
+    "MicoAir405Mini" : ("MicoAir F405 Mini", "MicoAir"),
+    "MicoAir743" : ("MicoAir H743 v1.3", "MicoAir"),
+    "MicoAir743-AIO" : ("MicoAir H743 AIO", "MicoAir"),
+    "MicoAir743v2" : ("MicoAir H743 v2.0", "MicoAir"),
+    "MicoAir743-Lite" : ("MicoAir H743 Lite v1.1", "MicoAir"),
+    "GEPRCF745BTHD": ("TAKER F745 BT", "GEPRC"),
+    "GEPRC_TAKER_H743": ("TAKER H743 BT", "GEPRC"),
 }
+
 
 class Firmware():
     def __init__(self,
@@ -60,6 +122,7 @@ class Firmware():
         self.atts["vehicletype"] = vehicletype
         self.atts["filepath"] = filepath
         self.atts["git_sha"] = git_sha
+        self.atts["firmware-version-str"] = ""
         self.atts["frame"] = frame
         self.atts["release-type"] = None
         self.atts["firmware-version"] = None
@@ -89,11 +152,13 @@ class ManifestGenerator():
             "tri": "TRICOPTER",
             "octa": "OCTOROTOR",
             "octa-quad": "ARDUPILOT_OCTAQUAD",
+            "deca": "DECAROTOR",
             "heli": "HELICOPTER",
             "Plane": "FIXED_WING",
             "AntennaTracker": "ANTENNA_TRACKER",
             "Rover": "GROUND_ROVER",
-            "Sub": "SUBMARINE"
+            "Sub": "SUBMARINE",
+            "AP_Periph": "CAN_PERIPHERAL",
         }
         if frame in frame_to_mavlink_dict:
             return frame_to_mavlink_dict[frame]
@@ -118,13 +183,55 @@ class ManifestGenerator():
     def git_sha_from_git_version(self, filepath):
         '''parses get-version.txt (as emitted by build_binaries.py, returns
         git sha from it'''
-        content = open(filepath).read()
+        content = pathlib.Path(filepath).read_text()
         sha_regex = re.compile("commit (?P<sha>[0-9a-f]+)")
         m = sha_regex.search(content)
         if m is None:
             raise Exception(
                 "filepath (%s) does not contain a git sha" % (filepath,))
         return m.group("sha")
+
+    def fwversion_from_git_version(self, filepath):
+        '''parses get-version.txt (as emitted by build_binaries.py, returns
+        git sha from it'''
+        content = pathlib.Path(filepath).read_text()
+        sha_regex = re.compile(r"APMVERSION: \S+\s+(\S+)")
+        m = sha_regex.search(content)
+        if m is None:
+            raise Exception(
+                "filepath (%s) does not contain an APMVERSION" % (filepath,))
+        return m.group(1)
+
+    def metadata_urls(self, filepath):
+        '''return URLs for metadata stored alongside a release directory'''
+        metadata_dir = pathlib.Path(filepath).parent.parent / '__METADATA__'
+        metadata_backup_dir = metadata_dir.parent / f'.{metadata_dir.name}.backup'
+        if not metadata_dir.is_dir() and metadata_backup_dir.is_dir():
+            metadata_dir = metadata_backup_dir
+        release_tag_path = metadata_dir / 'release-tag.txt'
+        if release_tag_path.is_file():
+            release_tag = release_tag_path.read_text(encoding='utf-8').strip()
+            if release_tag != 'dirty':
+                tag_match = re.match(r'[^-]+-(\d+\.\d+\.\d+)', release_tag)
+                if tag_match is None:
+                    return {}
+                firmware_version_path = pathlib.Path(filepath).parent / 'firmware-version.txt'
+                try:
+                    firmware_version = firmware_version_path.read_text(encoding='utf-8').strip().split('-', 1)[0]
+                except OSError:
+                    return {}
+                if tag_match.group(1) != firmware_version:
+                    return {}
+
+        urls = {}
+        for key, filename in (('parameters', 'apm.pdef.xml.xz'),
+                              ('logs', 'LogMessages.xml.xz')):
+            metadata_path = metadata_dir / filename
+            if metadata_path.is_file():
+                url = str(metadata_path)
+                urlifier = re.compile("^" + re.escape(self.basedir))
+                urls[key] = re.sub(urlifier, self.baseurl, url)
+        return urls
 
     def add_USB_IDs_PX4(self, firmware):
         '''add USB IDs to a .px4 firmware'''
@@ -154,7 +261,8 @@ class ManifestGenerator():
         if not os.path.exists(apj_path):
             print("bad apj path %s" % apj_path, file=sys.stderr)
             return
-        apj_json = json.load(open(apj_path, 'r'))
+        with open(apj_path, 'r') as in_file:
+            apj_json = json.load(in_file)
         if 'board_id' not in apj_json:
             print("no board_id in %s" % apj_path, file=sys.stderr)
             return
@@ -172,19 +280,22 @@ class ManifestGenerator():
         # map of vendor specific USB IDs
         USBID_MAP = {
             'CubeBlack': ['0x2DAE/0x1011'],
-            'CubeOrange': ['0x2DAE/0x1016'],
+            'CubeOrange': ['0x2DAE/0x1016', '0x2DAE/0x1017'],
             'CubePurple': ['0x2DAE/0x1005'],
             'CubeYellow': ['0x2DAE/0x1002'],
             'Pixhawk4': ['0x3162/0x0047'],
             'PH4-mini': ['0x3162/0x0049'],
-            'Pixhawk6': ['0x3162/0x004B'],
+            'Durandal': ['0x3162/0x004B'],
             'VRBrain-v51': ['0x27AC/0x1151'],
             'VRBrain-v52': ['0x27AC/0x1152'],
             'VRBrain-v54': ['0x27AC/0x1154'],
             'VRCore-v10': ['0x27AC/0x1910'],
             'VRUBrain-v51': ['0x27AC/0x1351']
         }
-        if platform in USBID_MAP:
+        if 'USBID' in apj_json:
+            # newer APJ files have USBID in the json data
+            firmware['USBID'] = [apj_json['USBID']]
+        elif platform in USBID_MAP:
             firmware['USBID'] = USBID_MAP[platform]
         else:
             # all others use a single USB VID/PID
@@ -215,10 +326,26 @@ class ManifestGenerator():
             firmware['bootloader_str'].append('MindPX BL FMU v2.x')
             firmware['USBID'].append('0x26AC/0x0030')
 
+        if board_id == 53:
+            # special case for 6X, they always get the px4 bootloader IDs as an option
+            firmware['bootloader_str'].append('PX4 BL FMU v6X.x')
+            firmware['USBID'].append('0x3185/0x0035')
+
+        if board_id == 56:
+            # special case for 6C, they always get the px4 bootloader IDs as an option
+            firmware['bootloader_str'].append('PX4 BL FMU v6C.x')
+            firmware['USBID'].append('0x3185/0x0038')
+
         if platform in brand_map:
             (brand_name, manufacturer) = brand_map[platform]
             firmware['brand_name'] = brand_name
             firmware['manufacturer'] = manufacturer
+
+        # copy over some extra information if available
+        extra_tags = ['image_size', 'brand_name', 'manufacturer']
+        for tag in extra_tags:
+            if tag in apj_json:
+                firmware[tag] = apj_json[tag]
 
     def add_USB_IDs(self, firmware):
         '''add USB IDs to a firmware'''
@@ -230,24 +357,36 @@ class ManifestGenerator():
             self.add_USB_IDs_ChibiOS(firmware)
             return
 
+    def firmware_format_for_filepath(self, filepath):
+        filename = os.path.basename(filepath)
+        if "." in filename:
+            return "".join(filename.split(".")[-1:])
+        # no extension; ensure this is an elf:
+        text = subprocess.check_output(["file", "-b", filepath])
+        text = text.decode('ascii')
+
+        if re.match("^ELF", text):
+            return "ELF"
+        print("Unknown file type (%s)" % filepath)
+        print("Got: %s" % text)
+        return "Unknown" # should raise an error somehow
+
     def add_firmware_data_from_dir(self,
                                    dir,
                                    firmware_data,
                                    vehicletype,
                                    releasetype="dev"):
         '''accumulate additional information about firmwares from directory'''
-        platform_frame_regex = re.compile(
-            "(?P<board>PX4|navio|pxf)(-(?P<frame>.+))?")
-        variant_firmware_regex = re.compile("[^-]+-(?P<variant>v\d+)[.px4]")
+        variant_firmware_regex = re.compile(r"[^-]+-(?P<variant>v\d+)[.px4]")
         if not os.path.isdir(dir):
             return
         try:
             dlist = os.listdir(dir)
-        except Exception:
+        except OSError:
             print("Error listing '%s'" % dir)
             return
         for platformdir in dlist:
-            if platformdir.startswith("."):
+            if platformdir.startswith(".") or platformdir == '__METADATA__':
                 continue
             some_dir = os.path.join(dir, platformdir)
             if not os.path.isdir(some_dir):
@@ -258,8 +397,13 @@ class ManifestGenerator():
                 continue
             try:
                 git_sha = self.git_sha_from_git_version(git_version_txt)
-            except Exception as ex:
+            except Exception as ex:  # noqa: BLE001
                 print("Failed to parse %s" % git_version_txt, ex, file=sys.stderr)
+                continue
+            try:
+                fwversion_str = self.fwversion_from_git_version(git_version_txt)
+            except Exception as ex:  # noqa: BLE001
+                print("Failed to parse APMVERSION %s" % git_version_txt, ex, file=sys.stderr)
                 continue
 
             # we require a firmware-version.txt. These files have been added to
@@ -271,38 +415,44 @@ class ManifestGenerator():
                 continue
 
             try:
-                firmware_version = open(firmware_version_file).read()
-                firmware_version = firmware_version.strip()
-                (version_numbers, release_type) = firmware_version.split("-")
+                with open(firmware_version_file) as in_file:
+                    firmware_version = in_file.read()
+                (_, _) = firmware_version.strip().split("-")
             except ValueError:
                 print("malformed firmware-version.txt at (%s)" % (firmware_version_file,), file=sys.stderr)
                 continue
-            except Exception as ex:
+            except OSError:
                 print("bad file %s" % firmware_version_file, file=sys.stderr)
                 # this exception is swallowed.... the current archive
                 # is incomplete.
                 continue
 
+            # Directory names for heli builds end in -heli
+            platform_frame_regex = re.compile("(?P<board>.+)(-(?P<frame>heli)$)")
             m = platform_frame_regex.match(platformdir)
             if m is not None:
-                # the model type (quad/tri) is
-                # encoded in the platform name
-                # (e.g. navio-octa)
+                # This is a heli build
                 platform = m.group("board")  # e.g. navio
-                frame = m.group("frame")  # e.g. octa
-                if frame is None:
-                    frame = vehicletype
+                frame = "heli"
             else:
+                # Non-heli build
                 frame = vehicletype  # e.g. Plane
                 platform = platformdir  # e.g. apm2
 
-            for file in os.listdir(some_dir):
-                if file in ["git-version.txt", "firmware-version.txt", "files.html"]:
+            # also gather information from any features.txt files present:
+            features_text = None
+            features_filepath = os.path.join(some_dir, "features.txt")
+            if os.path.exists(features_filepath):
+                with open(features_filepath) as in_file:
+                    features_text = sorted(in_file.read().rstrip().split("\n"))
+
+            for filename in os.listdir(some_dir):
+                if filename in ["git-version.txt", "firmware-version.txt", "files.html", "features.txt"]:
                     continue
-                if file.startswith("."):
+                if filename.startswith("."):
                     continue
 
-                m = variant_firmware_regex.match(file)
+                m = variant_firmware_regex.match(filename)
                 if m:
                     # the platform variant is
                     # encoded in the firmware filename
@@ -313,7 +463,10 @@ class ManifestGenerator():
                 else:
                     file_platform = platform
 
-                firmware_format = "".join(file.split(".")[-1:])
+                filepath = os.path.join(some_dir, filename)
+                firmware_format = self.firmware_format_for_filepath(filepath)
+                if firmware_format not in ["elf", "ELF", "abin", "apj", "hex", "px4", "bin"]:
+                    print("Unknown firmware format (%s)" % firmware_format)
 
                 firmware = Firmware()
 
@@ -323,26 +476,29 @@ class ManifestGenerator():
                 firmware["latest"] = 0
                 if releasetype == "dev":
                     if firmware["filepath"] is None:
-                        firmware["filepath"] = os.path.join(some_dir, file)
+                        firmware["filepath"] = filepath
                     if firmware["release-type"] is None:
                         firmware["release-type"] = "dev"
                 elif releasetype == "latest":
                     firmware["latest"] = 1
-                    firmware["filepath"] = os.path.join(some_dir, file)
+                    firmware["filepath"] = filepath
                     if firmware["release-type"] is None:
                         firmware["release-type"] = "dev"
                 else:
                     if (not firmware["latest"]):
-                        firmware["filepath"] = os.path.join(some_dir, file)
+                        firmware["filepath"] = filepath
                     firmware["release-type"] = releasetype
 
                 firmware["platform"] = file_platform
                 firmware["vehicletype"] = vehicletype
                 firmware["git_sha"] = git_sha
+                firmware["firmware-version-str"] = fwversion_str
                 firmware["frame"] = frame
                 firmware["timestamp"] = os.path.getctime(firmware["filepath"])
                 firmware["format"] = firmware_format
                 firmware["firmware-version"] = firmware_version
+
+                firmware["features"] = features_text
 
                 firmware_data.append(firmware)
 
@@ -361,7 +517,7 @@ class ManifestGenerator():
     def walk_directory(self, basedir):
         '''walks directory structure created by build_binaries, returns Python
         structure representing releases in that structure'''
-        year_month_regex = re.compile("(?P<year>\d{4})-(?P<month>\d{2})")
+        year_month_regex = re.compile(r"(?P<year>\d{4})-(?P<month>\d{2})")
 
         firmwares = []
 
@@ -392,7 +548,7 @@ class ManifestGenerator():
                 tag = firstlevel
                 if not self.valid_release_type(tag):
                     print("Unknown tag (%s) in directory (%s)" %
-                          (tag, os.path.join(vdir)), file=sys.stderr)
+                          (tag, os.path.join(*vdir)), file=sys.stderr)
                     continue
                 tag_path = os.path.join(basedir, vehicletype, tag)
                 if not os.path.isdir(tag_path):
@@ -404,6 +560,8 @@ class ManifestGenerator():
 
         # convert from ardupilot-naming conventions to common JSON format:
         firmware_json = []
+        features_json = []  # a structure containing summarised features per firmware
+
         for firmware in firmwares:
             filepath = firmware["filepath"]
             # replace the base directory with the base URL
@@ -418,14 +576,17 @@ class ManifestGenerator():
                 "url": url,
                 "mav-type": self.frame_map(firmware["frame"]),
                 "mav-firmware-version-type": version_type,
+                "mav-firmware-version-str": firmware["firmware-version-str"],
                 "latest": firmware["latest"],
                 "format": firmware["format"],
             })
+            some_json.update(self.metadata_urls(filepath))
+
             if firmware["firmware-version"]:
                 try:
                     (major, minor, patch, release_type) = self.parse_fw_version(
                         firmware["firmware-version"])
-                except Exception:
+                except ValueError:
                     print("Badly formed firmware-version.txt %s" % firmware["firmware-version"], file=sys.stderr)
                     continue
                 some_json["mav-firmware-version"] = ".".join([major,
@@ -437,24 +598,84 @@ class ManifestGenerator():
 
             self.add_USB_IDs(some_json)
 
-            #print(some_json['url'])
             firmware_json.append(some_json)
+
+            # now the features the firmware supports...
+            try:
+                features = firmware["features"]
+                # check apj here in case we're creating bin and apj etc:
+                if (firmware["format"] == "apj" and
+                        features is not None and
+                        bool(firmware["latest"])):
+                    x = dict({
+                        "vehicletype": firmware["vehicletype"],
+                        "platform": firmware["platform"],
+                        "git-sha": firmware["git_sha"],
+                        "latest": firmware["latest"],
+                    })
+                    x["features"] = features
+                    features_json.append(x)
+
+            except KeyError:
+                pass
 
         ret = {
             "format-version": "1.0.0",  # semantic versioning
             "firmware": firmware_json
         }
 
-        return ret
+        features_ret = {
+            "format-version": "1.0.0",  # semantic versioning
+            "features": features_json
+        }
 
-    def json(self):
-        '''walk directory supplied in constructor, return json string'''
+        return ret, features_ret
+
+    def run(self):
+        '''walk directory supplied in constructor, record results in self'''
         if not self.looks_like_binaries_directory(self.basedir):
             print("Warning: this does not look like a binaries directory",
                   file=sys.stderr)
 
-        structure = self.walk_directory(self.basedir)
-        return json.dumps(structure, indent=4)
+        self.structure, self.features_structure = self.walk_directory(self.basedir)
+
+    def json(self):
+        '''returns JSON string for version information for all firmwares'''
+        if getattr(self, 'structure', None) is None:
+            self.run()
+        return json.dumps(self.structure, indent=4, separators=(',', ': '))
+
+    def json_features(self):
+        '''returns JSON string for supported features for all firmwares.
+        run() method must have been called already'''
+        return json.dumps(self.features_structure, indent=4, separators=(',', ': '))
+
+    def write_string_to_filepath(self, string, filepath):
+        '''writes the entirety of string to filepath'''
+        with open(filepath, "w") as x:
+            x.write(string)
+
+    def write_json(self, content, path):
+        '''write content to path, also creating a compress .gz version'''
+        new_json_filepath = path + ".new"
+        self.write_string_to_filepath(content, new_json_filepath)
+        # provide a pre-compressed version.  For reference, a 7M manifest
+        # "gzip -9"s to 300k in 1 second, "xz -e"s to 80k in 26 seconds
+        new_json_filepath_gz = path + ".gz.new"
+        with gzip.open(new_json_filepath_gz, 'wb') as gf:
+            content = bytes(content, 'ascii')
+            gf.write(content)
+            gf.close()
+        shutil.move(new_json_filepath, path)
+        shutil.move(new_json_filepath_gz, path + ".gz")
+
+    def write_manifest_json(self, path):
+        '''write generated JSON content to path'''
+        self.write_json(self.json(), path)
+
+    def write_features_json(self, path):
+        '''write generated features JSON content to path'''
+        self.write_json(self.json_features(), path)
 
 
 def usage():
@@ -467,7 +688,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='generate manifest.json')
 
     parser.add_argument('--outfile', type=str, default=None, help='output file, default stdout')
-    parser.add_argument('--baseurl', type=str, default="http://firmware.ardupilot.org", help='base binaries directory')
+    parser.add_argument('--outfile-features-json', type=str, default=None, help='output file for features json file')
+    parser.add_argument('--baseurl', type=str, default="https://firmware.ardupilot.org", help='base binaries directory')
     parser.add_argument('basedir', type=str, default="-", help='base binaries directory')
 
     args = parser.parse_args()
@@ -476,9 +698,13 @@ if __name__ == "__main__":
     gen_stable.make_all_stable(args.basedir)
 
     generator = ManifestGenerator(args.basedir, args.baseurl)
+    generator.run()
+
+    content = generator.json()
     if args.outfile is None:
-        print(generator.json())
+        print(content)
     else:
-        f = open(args.outfile, "w")
-        f.write(generator.json())
-        f.close()
+        generator.write_manifest_json(args.outfile)
+
+    if args.outfile_features_json is not None:
+        generator.write_features_json(args.outfile_features_json)

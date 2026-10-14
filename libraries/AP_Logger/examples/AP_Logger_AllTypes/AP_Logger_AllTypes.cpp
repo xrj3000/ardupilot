@@ -4,6 +4,7 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Logger/AP_Logger.h>
+#include <AP_Scheduler/AP_Scheduler.h>
 #include <GCS_MAVLink/GCS_Dummy.h>
 #include <stdio.h>
 
@@ -39,6 +40,7 @@ struct PACKED log_TYP2 {
     uint8_t   M;   // flight mode
     int64_t   q;
     uint64_t  Q;
+    Float16_t g;
 };
 
 
@@ -48,29 +50,39 @@ enum MyLogMessages {
 };
 
 static const struct LogStructure log_structure[] = {
+    { LOG_FORMAT_MSG,
+      sizeof(log_Format),
+      "FMT",
+      "BBnNZ",
+      "Type,Length,Name,Format,Columns",
+      "-b---",
+      "-----" },
+    { LOG_UNIT_MSG, sizeof(log_Unit),
+      "UNIT", "QbZ",      "TimeUS,Id,Label", "s--","F--" },
+    { LOG_FORMAT_UNITS_MSG, sizeof(log_Format_Units),
+      "FMTU", "QBNN",      "TimeUS,FmtType,UnitIds,MultIds","s---", "F---" },
+    { LOG_MULT_MSG, sizeof(log_Format_Multiplier),
+      "MULT", "Qbd",      "TimeUS,Id,Mult", "s--","F--" },
+
     { LOG_TYP1_MSG,
       sizeof(log_TYP1),
       "TYP1",
-      "QbBhHiIfdnNZ",
-      "TimeUS,b,B,h,H,i,I,f,d,n,N,Z",
-      "s-----------",
-      "F-----------"
+      "QabBhHiIfdnNZ",
+      "TimeUS,a,b,B,h,H,i,I,f,d,n,N,Z",
+      "s------------",
+      "F------------"
     },
     { LOG_TYP2_MSG,
       sizeof(log_TYP2),
       "TYP2",
-      "QcCeELMqQ",
-      "TimeUS,c,C,e,E,L,M,q,Q",
-      "s--------",
-      "F--------"
+      "QcCeELMqQg",
+      "TimeUS,c,C,e,E,L,M,q,Q,g",
+      "s---------",
+      "F---------"
     },
-    { LOG_MESSAGE_MSG,
-      sizeof(log_Message),
-      "MSG",
-      "QZ",
-      "TimeUS,Message",
-      "s-",
-      "F-"}
+    // copied from LogStructure.h; this is important
+    { LOG_MSG_MSG, sizeof(log_MSG),
+      "MSG",  "QBHZ",     "TimeUS,ID,Seq,Message", "s---", "F---"},
 };
 
 // these are identical to the entries in the above log-structure.  Not
@@ -78,21 +90,21 @@ static const struct LogStructure log_structure[] = {
 // structure and that in LogStructure.h
 #define TYP1_FMT "QabBhHiIfdnNZ"
 #define TYP1_LBL "TimeUS,b,B,h,H,i,I,f,d,n,N,Z"
-#define TYP2_FMT "QcCeELMqQ"
-#define TYP2_LBL "TimeUS,c,C,e,E,L,M,q,Q"
+#define TYP2_FMT "QcCeELMqQg"
+#define TYP2_LBL "TimeUS,c,C,e,E,L,M,q,Q,g"
 
 static uint16_t log_num;
 
 class AP_LoggerTest_AllTypes : public AP_HAL::HAL::Callbacks {
 public:
-    void setup();
-    void loop();
+    void setup() override;
+    void loop() override;
 
 private:
 
-    AP_Int32 log_bitmask;
-    AP_Logger logger{log_bitmask};
-    void print_mode(AP_HAL::BetterStream *port, uint8_t mode);
+    AP_UInt32 log_bitmask;
+    AP_Logger logger;
+    AP_Scheduler scheduler;
 
     void Log_Write_TypeMessages();
     void Log_Write_TypeMessages_Log_Write();
@@ -119,10 +131,13 @@ void AP_LoggerTest_AllTypes::Log_Write_TypeMessages()
     log_num = logger.find_last_log();
     hal.console->printf("Using log number %u\n", log_num);
 
-    struct log_TYP1 typ1 = {
+    hal.console->printf("Writing out a few messages to get formats out...");
+    logger.Write_Message("Start 1");
+
+    struct log_TYP1 typ1{
         LOG_PACKET_HEADER_INIT(LOG_TYP1_MSG),
         time_us : AP_HAL::micros64(),
-        a : { -32768, 32767, 1, -1, 0, 17 }, // int16[32]
+        a : { INT16_MIN, INT16_MAX, 1, -1, 0, 19 }, // int16[32]
         b : -17, // int8_t
         B : 42,  // uint8_t
         h : -12372,  // int16_t
@@ -140,8 +155,12 @@ void AP_LoggerTest_AllTypes::Log_Write_TypeMessages()
               'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
               'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P' }
     };
-    logger.WriteBlock(&typ1, sizeof(typ1));
+    if (!logger.WriteBlock_first_succeed(&typ1, sizeof(typ1))) {
+        abort();
+    }
 
+    Float16_t f16;
+    f16.set(13.54f);
     struct log_TYP2 typ2 = {
         LOG_PACKET_HEADER_INIT(LOG_TYP2_MSG),
         time_us : AP_HAL::micros64(),
@@ -152,7 +171,8 @@ void AP_LoggerTest_AllTypes::Log_Write_TypeMessages()
         L : -3576543,   // uint32_t latitude/longitude;
         M : 5,          //   uint8_t;   // flight mode;
         q : -98239832498328,   // int64_t
-        Q : 3432345232233432   // uint64_t
+        Q : 3432345232233432,  // uint64_t
+        g : f16              // float16_t
     };
     logger.WriteBlock(&typ2, sizeof(typ2));
 
@@ -166,37 +186,60 @@ void AP_LoggerTest_AllTypes::Log_Write_TypeMessages_Log_Write()
     log_num = logger.find_last_log();
     hal.console->printf("Using log number for Log_Write %u\n", log_num);
 
-    logger.Write("TYP3", TYP1_LBL, TYP1_FMT,
-                        AP_HAL::micros64(),
-                        -17, // int8_t
-                        42,  // uint8_t
-                        -12372,  // int16_t
-                        19812,   // uint16_t
-                        -98234729,   // int32_t
-                        74627293,    // uint32_t
-                        35.87654f,  // float
-                        (double)67.7393274658293,   // double
-                        "ABCD", // char[4]
-                        // char[16]:
-                        "ABCDEFGHIJKLMNOP",
-                        // char[64]:
-                        "ABCDEFGHIJKLMNOPABCDEFGHIJKLMNOPABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP"
+    hal.console->printf("Writing out a few messages to get formats out...");
+    logger.Write_Message("Start 2");
+
+    logger.Write("TYPn",
+                 "TimeUS,Str",
+                 "Qn",
+                 AP_HAL::micros64(),
+                 "ABCD");
+
+    const int16_t a[32] = { INT16_MIN, INT16_MAX, 1, -1, 0, 17 };
+
+    logger.Write("TYPa",
+                 "TimeUS,Arr",
+                 "Qa",
+                 AP_HAL::micros64(),
+                 a);
+
+    logger.Write("TYP3",
+                 TYP1_LBL,
+                 TYP1_FMT,
+                 AP_HAL::micros64(),
+                 a, // int16[32]
+                 -17, // int8_t
+                 42,  // uint8_t
+                 -12372,  // int16_t
+                 19812,   // uint16_t
+                 -98234729,   // int32_t
+                 74627293,    // uint32_t
+                 35.87654f,  // float
+                 (double)67.7393274658293,   // double
+                 "ABCD", // char[4]
+                 // char[16]:
+                 "ABCDEFGHIJKLMNOP",
+                 // char[64]:
+                 "ABCDEFGHIJKLMNOPABCDEFGHIJKLMNOPABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP"
         );
 
-    logger.Write("TYP4", TYP2_LBL, TYP2_FMT,
-                        AP_HAL::micros64(),
-                        -9823, // int16_t * 100
-                        5436,  // uint16_t * 100
-                        -9209238,  // int32_t * 100
-                        19239872,  // uint32_t * 100
-                        -3576543,   // uint32_t latitude/longitude;
-                        5,          //   uint8_t;   // flight mode;
-                        -98239832498328,   // int64_t
-                        3432345232233432   // uint64_t
+    logger.Write("TYP4",
+                 TYP2_LBL,
+                 TYP2_FMT,
+                 AP_HAL::micros64(),
+                 -9823, // int16_t * 100
+                 5436,  // uint16_t * 100
+                 -9209238,  // int32_t * 100
+                 19239872,  // uint32_t * 100
+                 -3576543,   // uint32_t latitude/longitude;
+                 5,          //   uint8_t;   // flight mode;
+                 -98239832498328,   // int64_t
+                 3432345232233432,   // uint64_t
+                 13.54               // float16_t
         );
 
     // emit a message which contains NaNs:
-    logger.Write("NANS", "f,d,bf,bd", "fdfd",  logger.quiet_nanf(), logger.quiet_nan(), NAN, NAN);
+    logger.Write("NANS", "f,d,bf,bd", "fdfd",  AP_Logger::quiet_nanf(), AP_Logger::quiet_nan(), NAN, NAN);
 
     flush_logger(logger);
 
@@ -207,8 +250,8 @@ void AP_LoggerTest_AllTypes::setup(void)
 {
     hal.console->printf("Logger All Types 1.0\n");
 
-    log_bitmask = (uint32_t)-1;
-    logger.Init(log_structure, ARRAY_SIZE(log_structure));
+    log_bitmask.set(UINT32_MAX);
+    logger.init(log_bitmask, log_structure, ARRAY_SIZE(log_structure));
     logger.set_vehicle_armed(true);
     logger.Write_Message("AP_Logger Test");
 
@@ -227,9 +270,6 @@ void AP_LoggerTest_AllTypes::loop(void)
     hal.scheduler->delay(1000);
 }
 
-const struct AP_Param::GroupInfo        GCS_MAVLINK::var_info[] = {
-    AP_GROUPEND
-};
 GCS_Dummy _gcs;
 
 

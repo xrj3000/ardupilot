@@ -54,6 +54,62 @@ const AP_Param::GroupInfo AP_WheelRateControl::var_info[] = {
     // @Range: 1.000 100.000
     // @Units: Hz
     // @User: Standard
+
+    // @Param: _RATE_FLTT
+    // @DisplayName: Wheel rate control target frequency in Hz
+    // @Description: Wheel rate control target frequency in Hz
+    // @Range: 1 50
+    // @Increment: 1
+    // @Units: Hz
+    // @User: Standard
+
+    // @Param: _RATE_FLTE
+    // @DisplayName: Wheel rate control error frequency in Hz
+    // @Description: Wheel rate control error frequency in Hz
+    // @Range: 1 50
+    // @Increment: 1
+    // @Units: Hz
+    // @User: Standard
+
+    // @Param: _RATE_FLTD
+    // @DisplayName: Wheel rate control derivative frequency in Hz
+    // @Description: Wheel rate control derivative frequency in Hz
+    // @Range: 1 50
+    // @Increment: 1
+    // @Units: Hz
+    // @User: Standard
+
+    // @Param: _RATE_SMAX
+    // @DisplayName: Wheel rate slew rate limit
+    // @Description: Sets an upper limit on the slew rate produced by the combined P and D gains. If the amplitude of the control action produced by the rate feedback exceeds this value, then the D+P gain is reduced to respect the limit. This limits the amplitude of high frequency oscillations caused by an excessive gain. The limit should be set to no more than 25% of the actuators maximum slew rate to allow for load effects. Note: The gain will not be reduced to less than 10% of the nominal value. A value of zero will disable this feature.
+    // @Range: 0 200
+    // @Increment: 0.5
+    // @User: Advanced
+
+    // @Param: _RATE_PDMX
+    // @DisplayName: Wheel rate control PD sum maximum
+    // @Description: Wheel rate control PD sum maximum.  The maximum/minimum value that the sum of the P and D term can output
+    // @Range: 0.000 1.000
+
+    // @Param: _RATE_D_FF
+    // @DisplayName: Wheel rate Derivative FeedForward Gain
+    // @Description: FF D Gain which produces an output that is proportional to the rate of change of the error
+    // @Range: 0.000 0.400
+    // @Increment: 0.001
+    // @User: Advanced
+
+    // @Param: _RATE_NTF
+    // @DisplayName: Wheel rate Target notch filter index
+    // @Description: Wheel rate Target notch filter index, zero disables
+    // @Range: 0 8
+    // @User: Advanced
+
+    // @Param: _RATE_NEF
+    // @DisplayName: Wheel rate Error notch filter index
+    // @Description: Wheel rate Error notch filter index, zero disables
+    // @Range: 0 8
+    // @User: Advanced
+
     AP_SUBGROUPINFO(_rate_pid0, "_RATE_", 3, AP_WheelRateControl, AC_PID),
 
     // @Param: 2_RATE_FF
@@ -92,6 +148,62 @@ const AP_Param::GroupInfo AP_WheelRateControl::var_info[] = {
     // @Range: 1.000 100.000
     // @Units: Hz
     // @User: Standard
+
+    // @Param: 2_RATE_FLTT
+    // @DisplayName: Wheel rate control target frequency in Hz
+    // @Description: Wheel rate control target frequency in Hz
+    // @Range: 1 50
+    // @Increment: 1
+    // @Units: Hz
+    // @User: Standard
+
+    // @Param: 2_RATE_FLTE
+    // @DisplayName: Wheel rate control error frequency in Hz
+    // @Description: Wheel rate control error frequency in Hz
+    // @Range: 1 50
+    // @Increment: 1
+    // @Units: Hz
+    // @User: Standard
+
+    // @Param: 2_RATE_FLTD
+    // @DisplayName: Wheel rate control derivative frequency in Hz
+    // @Description: Wheel rate control derivative frequency in Hz
+    // @Range: 1 50
+    // @Increment: 1
+    // @Units: Hz
+    // @User: Standard
+
+    // @Param: 2_RATE_SMAX
+    // @DisplayName: Wheel rate slew rate limit
+    // @Description: Sets an upper limit on the slew rate produced by the combined P and D gains. If the amplitude of the control action produced by the rate feedback exceeds this value, then the D+P gain is reduced to respect the limit. This limits the amplitude of high frequency oscillations caused by an excessive gain. The limit should be set to no more than 25% of the actuators maximum slew rate to allow for load effects. Note: The gain will not be reduced to less than 10% of the nominal value. A value of zero will disable this feature.
+    // @Range: 0 200
+    // @Increment: 0.5
+    // @User: Advanced
+
+    // @Param: 2_RATE_PDMX
+    // @DisplayName: Wheel rate control PD sum maximum
+    // @Description: Wheel rate control PD sum maximum.  The maximum/minimum value that the sum of the P and D term can output
+    // @Range: 0.000 1.000
+
+    // @Param: 2_RATE_D_FF
+    // @DisplayName: Wheel rate Derivative FeedForward Gain
+    // @Description: FF D Gain which produces an output that is proportional to the rate of change of the target
+    // @Range: 0.000 0.400
+    // @Increment: 0.001
+    // @User: Advanced
+
+    // @Param: 2_RATE_NTF
+    // @DisplayName: Wheel rate Target notch filter index
+    // @Description: Wheel rate Target notch filter index, zero disables
+    // @Range: 0 8
+    // @User: Advanced
+
+    // @Param: 2_RATE_NEF
+    // @DisplayName: Wheel rate Error notch filter index
+    // @Description: Wheel rate Error notch filter index, zero disables
+    // @Range: 0 8
+    // @User: Advanced
+
     AP_SUBGROUPINFO(_rate_pid1, "2_RATE_", 4, AP_WheelRateControl, AC_PID),
 
     AP_GROUPEND
@@ -125,9 +237,6 @@ float AP_WheelRateControl::get_rate_controlled_throttle(uint8_t instance, float 
     // determine which PID instance to use
     AC_PID& rate_pid = (instance == 0) ? _rate_pid0 : _rate_pid1;
 
-    // set PID's dt
-    rate_pid.set_dt(dt);
-
     // check for timeout
     uint32_t now = AP_HAL::millis();
     if (now - _last_update_ms > AP_WHEEL_RATE_CONTROL_TIMEOUT_MS) {
@@ -139,36 +248,14 @@ float AP_WheelRateControl::get_rate_controlled_throttle(uint8_t instance, float 
     _last_update_ms = now;
 
     // convert desired rate as a percentage to radians/sec
-    float desired_rate = desired_rate_pct / 100.0f * get_rate_max_rads();
+    float desired_rate = desired_rate_pct * 0.01f * get_rate_max_rads();
 
-    // get actual rate from wheeel encoder
+    // get actual rate from wheel encoder
     float actual_rate = _wheel_encoder.get_rate(instance);
 
-    // calculate rate error and pass to pid controller
-    float rate_error = desired_rate - actual_rate;
-    rate_pid.set_input_filter_all(rate_error);
-
-    // store desired and actual for logging purposes
-    rate_pid.set_desired_rate(desired_rate);
-    rate_pid.set_actual_rate(actual_rate);
-
-    // get ff
-    float ff = rate_pid.get_ff(desired_rate);
-
-    // get p
-    float p = rate_pid.get_p();
-
-    // get i unless we hit limit on last iteration
-    float i = rate_pid.get_integrator();
-    if (((is_negative(rate_error) && !_limit[instance].lower) || (is_positive(rate_error) && !_limit[instance].upper))) {
-        i = rate_pid.get_i();
-    }
-
-    // get d
-    float d = rate_pid.get_d();
-
     // constrain and set limit flags
-    float output = ff + p + i + d;
+    float output = rate_pid.update_all(desired_rate, actual_rate, dt, (_limit[instance].lower || _limit[instance].upper));
+    output += rate_pid.get_ff();
 
     // set limits for next iteration
     _limit[instance].upper = output >= 100.0f;
@@ -185,4 +272,12 @@ AC_PID& AP_WheelRateControl::get_pid(uint8_t instance)
     } else {
         return _rate_pid1;
     }
+}
+
+void AP_WheelRateControl::set_notch_sample_rate(float sample_rate)
+{
+#if AP_FILTER_ENABLED
+    _rate_pid0.set_notch_sample_rate(sample_rate);
+    _rate_pid1.set_notch_sample_rate(sample_rate);
+#endif
 }

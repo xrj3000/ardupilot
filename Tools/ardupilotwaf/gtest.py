@@ -1,5 +1,6 @@
-#!/usr/bin/env python
 # encoding: utf-8
+
+# flake8: noqa
 
 """
 gtest is a Waf tool for test builds in Ardupilot
@@ -42,10 +43,10 @@ def configure(cfg):
 def libgtest(bld, **kw):
     kw['cxxflags'] = Utils.to_list(kw.get('cxxflags', [])) + ['-Wno-undef']
     kw.update(
-        source='modules/gtest/src/gtest-all.cc',
+        source='modules/gtest/googletest/src/gtest-all.cc',
         target='gtest/gtest',
-        includes='modules/gtest/ modules/gtest/include',
-        export_includes='modules/gtest/include',
+        includes='modules/gtest/googletest modules/gtest/googletest/include',
+        export_includes='modules/gtest/googletest/include',
         name='GTEST',
     )
     return bld.stlib(**kw)

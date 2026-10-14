@@ -1,9 +1,12 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+
+# flake8: noqa
+
 '''
 check firmware-version.txt in binaries directory
 '''
 
-import os, shutil, subprocess
+import os
 
 VEHICLES = ['AntennaTracker', 'Copter', 'Plane', 'Rover', 'Sub']
 
@@ -27,8 +30,8 @@ def parse_git_version(gfile):
 def check_fw_version(version):
     try:
         (version_numbers, release_type) = version.split("-")
-        (major, minor, patch) = version_numbers.split(".")
-    except Exception:
+        (_, _, _) = version_numbers.split(".")
+    except ValueError:
         return False
     return True
 

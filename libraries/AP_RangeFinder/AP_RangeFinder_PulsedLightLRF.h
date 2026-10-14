@@ -1,7 +1,12 @@
 #pragma once
 
-#include "RangeFinder.h"
-#include "RangeFinder_Backend.h"
+#include "AP_RangeFinder_config.h"
+
+#if AP_RANGEFINDER_PULSEDLIGHTLRF_ENABLED
+
+#include "AP_RangeFinder.h"
+#include "AP_RangeFinder_Backend.h"
+
 #include <AP_HAL/I2CDevice.h>
 
 /* Connection diagram
@@ -22,7 +27,7 @@ public:
     static AP_RangeFinder_Backend *detect(uint8_t bus,
                                           RangeFinder::RangeFinder_State &_state,
                                           AP_RangeFinder_Params &_params,
-                                          RangeFinder::RangeFinder_Type rftype);
+                                          RangeFinder::Type rftype);
 
     // update state
     void update(void) override {}
@@ -38,7 +43,7 @@ private:
     AP_RangeFinder_PulsedLightLRF(uint8_t bus,
                                   RangeFinder::RangeFinder_State &_state,
 								  AP_RangeFinder_Params &_params,
-                                  RangeFinder::RangeFinder_Type rftype);
+                                  RangeFinder::Type rftype);
 
     // start a reading
     bool init(void);
@@ -53,7 +58,9 @@ private:
     bool v2_hardware;
     bool v3hp_hardware;
     uint16_t last_distance_cm;
-    RangeFinder::RangeFinder_Type rftype;
+    RangeFinder::Type rftype;
     
     enum { PHASE_MEASURE, PHASE_COLLECT } phase;
 };
+
+#endif  // AP_RANGEFINDER_PULSEDLIGHTLRF_ENABLED

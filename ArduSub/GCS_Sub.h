@@ -1,7 +1,7 @@
 #pragma once
 
 #include <GCS_MAVLink/GCS.h>
-#include "GCS_Mavlink.h"
+#include "GCS_MAVLink_Sub.h"
 
 class GCS_Sub : public GCS
 {
@@ -9,16 +9,12 @@ class GCS_Sub : public GCS
 
 public:
 
-    // return the number of valid GCS objects
-    uint8_t num_gcs() const override { return ARRAY_SIZE(_chan); };
-
-    // return GCS link at offset ofs
-    GCS_MAVLINK_Sub &chan(const uint8_t ofs) override {
-        return _chan[ofs];
-    };
-    const GCS_MAVLINK_Sub &chan(const uint8_t ofs) const override {
-        return _chan[ofs];
-    };
+    // the following define expands to a pair of methods to retrieve a
+    // pointer to an object of the correct subclass for the link at
+    // offset ofs.  These are of the form:
+    // GCS_MAVLINK_XXXX *chan(const uint8_t ofs) override;
+    // const GCS_MAVLINK_XXXX *chan(const uint8_t ofs) override const;
+    GCS_MAVLINK_CHAN_METHOD_DEFINITIONS(GCS_MAVLINK_Sub);
 
     void update_vehicle_sensor_status_flags() override;
 
@@ -27,8 +23,18 @@ public:
 
     bool vehicle_initialised() const override;
 
-private:
+protected:
 
-    GCS_MAVLINK_Sub _chan[MAVLINK_COMM_NUM_BUFFERS];
+    // minimum amount of time (in microseconds) that must remain in
+    // the main scheduler loop before we are allowed to send any
+    // mavlink messages.  We want to prioritise the main flight
+    // control loop over communications
+    uint16_t min_loop_time_remaining_for_message_send_us() const override {
+        return 250;
+    }
+
+    GCS_MAVLINK_Sub *new_gcs_mavlink_backend(AP_HAL::UARTDriver &uart) override {
+        return NEW_NOTHROW GCS_MAVLINK_Sub(uart);
+    }
 
 };

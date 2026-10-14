@@ -11,6 +11,7 @@
 #include <AP_Compass/AP_Compass.h>
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_AHRS/AP_AHRS_DCM.h>
+#include <GCS_MAVLink/GCS_Dummy.h>
 
 const AP_HAL::HAL& hal = AP_HAL::get_HAL();
 
@@ -24,7 +25,8 @@ private:
     AP_Baro baro;
     AP_GPS  gps;
     Compass compass;
-    AP_AHRS_DCM ahrs{};
+    AP_AHRS ahrs{};
+    GCS_Dummy _gcs;
 
     // global constants that control how many verify calls must be made for a command before it completes
     uint8_t verify_nav_cmd_iterations_to_complete = 3;

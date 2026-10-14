@@ -4,16 +4,29 @@
   For bootstrapping this will initially implement the px4io protocol,
   but will later move to an ArduPilot specific protocol
  */
+#pragma once
 
 #include <AP_HAL/AP_HAL.h>
 
 #if HAL_WITH_IO_MCU
 
-#include "ch.h"
 #include "iofirmware/ioprotocol.h"
-#include <AP_RCMapper/AP_RCMapper.h>
+#include <AP_HAL/RCOutput.h>
+#include <AP_ESC_Telem/AP_ESC_Telem_Backend.h>
 
-class AP_IOMCU {
+typedef uint32_t eventmask_t;
+typedef struct ch_thread thread_t;
+
+#ifndef AP_IOMCU_FW_FLASH_SIZE
+#define AP_IOMCU_FW_FLASH_SIZE (0x10000 - 0x1000)
+#endif
+
+
+class AP_IOMCU
+#ifdef HAL_WITH_ESC_TELEM
+  : public AP_ESC_Telem_Backend
+#endif
+{
 public:
     AP_IOMCU(AP_HAL::UARTDriver &uart);
 
@@ -46,15 +59,12 @@ public:
     // force safety off
     void force_safety_off(void);
 
-    // set PWM of channels when safety is on
-    void set_safety_pwm(uint16_t chmask, uint16_t period_us);
-
     // set mask of channels that ignore safety state
     void set_safety_mask(uint16_t chmask);
 
     // set PWM of channels when in FMU failsafe
     void set_failsafe_pwm(uint16_t chmask, uint16_t period_us);
-    
+
     /*
       enable sbus output
     */
@@ -66,20 +76,25 @@ public:
     bool check_rcinput(uint32_t &last_frame_us, uint8_t &num_channels, uint16_t *channels, uint8_t max_channels);
 
     // Do DSM receiver binding
-    void bind_dsm(uint8_t mode);
+    void bind_dsm();
 
     // get the name of the RC protocol
     const char *get_rc_protocol(void);
 
+    // get receiver RSSI
+    int16_t get_RSSI(void) const {
+        return rc_input.rssi;
+    }
+    
     /*
-      get servo rail voltage
+      get servo rail voltage adc counts
      */
-    float get_vservo(void) const { return reg_status.vservo * 0.001; }
+    uint16_t get_vservo_adc_count(void) const { return reg_status.vservo; }
 
     /*
-      get rssi voltage
+      get rssi voltage adc counts
      */
-    float get_vrssi(void) const { return reg_status.vrssi * 0.001; }
+    uint16_t get_vrssi_adc_count(void) const { return reg_status.vrssi; }
 
     // set target for IMU heater
     void set_heater_duty_cycle(uint8_t duty_cycle);
@@ -92,17 +107,92 @@ public:
 
     // set to brushed mode
     void set_brushed_mode(void);
-    
+
+    // set output mode
+    void set_output_mode(uint16_t mask, uint16_t mode);
+
+    // set bi-directional mask
+    void set_bidir_dshot_mask(uint16_t mask);
+
+    // set reversible mask
+    void set_reversible_mask(uint16_t mask);
+
+    // get output mode
+    AP_HAL::RCOutput::output_mode get_output_mode(uint8_t& mask) const;
+
+    // approximation to disabled channel
+    uint32_t get_disabled_channels(uint32_t digital_mask) const;
+
+    // MCUID
+    uint32_t get_mcu_id() const { return config.mcuid; }
+
+    // CPUID
+    uint32_t get_cpu_id() const { return config.cpuid; }
+
+#if HAL_DSHOT_ENABLED
+    // set dshot output period
+    void set_dshot_period(uint16_t period_us, uint8_t drate);
+
+    // set telem request mask
+    void set_telem_request_mask(uint32_t mask);
+
+    // set the dshot esc_type
+    void set_dshot_esc_type(AP_HAL::RCOutput::DshotEscType dshot_esc_type);
+
+    // send a dshot command
+    void send_dshot_command(uint8_t command, uint8_t chan, uint32_t command_timeout_ms, uint16_t repeat_count, bool priority);
+#endif
+    // setup channels
+    void     enable_ch(uint8_t ch);
+    void     disable_ch(uint8_t ch);
+
     // check if IO is healthy
     bool healthy(void);
 
     // shutdown IO protocol (for reboot)
     void shutdown();
 
+    void soft_reboot();
+
     // setup for FMU failsafe mixing
-    bool setup_mixing(RCMapper *rcmap, int8_t override_chan,
+    bool setup_mixing(int8_t override_chan,
                       float mixing_gain, uint16_t manual_rc_mask);
-    
+
+    // Check if pin number is valid and configured for GPIO
+    bool valid_GPIO_pin(uint8_t pin) const;
+
+    // convert external pin numbers 101 to 108 to internal 0 to 7
+    bool convert_pin_number(uint8_t& pin) const;
+
+    // set GPIO mask of channels setup for output
+    void set_GPIO_mask(uint8_t mask);
+
+    // Get GPIO mask of channels setup for output
+    uint8_t get_GPIO_mask() const;
+
+    // write to a output pin
+    void write_GPIO(uint8_t pin, bool value);
+
+    // Read the last output value send to the GPIO pin
+    // This is not a real read of the actual pin
+    // This allows callers to check for state change
+    uint8_t read_virtual_GPIO(uint8_t pin) const;
+
+    // toggle a output pin
+    void toggle_GPIO(uint8_t pin);
+
+#if AP_IOMCU_PROFILED_SUPPORT_ENABLED
+    // set profiled values
+    void set_profiled(uint8_t r, uint8_t g, uint8_t b);
+#endif
+
+    // channel group masks
+    const uint8_t ch_masks[3] = { 0x03,0x0C,0xF0 };
+
+    static AP_IOMCU *get_singleton(void) {
+        return singleton;
+    }
+
 private:
     AP_HAL::UARTDriver &uart;
 
@@ -118,7 +208,7 @@ private:
     bool write_register(uint8_t page, uint8_t offset, uint16_t v) {
         return write_registers(page, offset, 1, &v);
     }
-    
+
     // modify a single register
     bool modify_register(uint8_t page, uint8_t offset, uint16_t clearbits, uint16_t setbits);
 
@@ -134,8 +224,10 @@ private:
     uint32_t last_status_read_ms;
     uint32_t last_rc_read_ms;
     uint32_t last_servo_read_ms;
-    uint32_t last_debug_ms;
     uint32_t last_safety_option_check_ms;
+    uint32_t last_reg_access_ms;
+    uint32_t last_erpm_read_ms;
+    uint32_t last_telem_read_ms;
 
     // last value of safety options
     uint16_t last_safety_options = 0xFFFF;
@@ -143,43 +235,48 @@ private:
     // have we forced the safety off?
     bool safety_forced_off;
 
+    // was safety off on last status?
+    bool last_safety_off;
+
     void send_servo_out(void);
     void read_rc_input(void);
+    void read_erpm(void);
+    void read_telem(void);
     void read_servo(void);
     void read_status(void);
-    void print_debug(void);
     void discard_input(void);
-    void event_failed(uint8_t event);
+    void event_failed(uint32_t event_mask);
     void update_safety_options(void);
+    void send_rc_protocols(void);
 
     // CONFIG page
     struct page_config config;
 
     // PAGE_STATUS values
     struct page_reg_status reg_status;
+    uint32_t last_log_ms;
 
     // PAGE_RAW_RCIN values
     struct page_rc_input rc_input;
+    uint32_t rc_last_input_ms;
 
     // MIXER values
     struct page_mixing mixing;
-    
+
     // output pwm values
     struct {
         uint8_t num_channels;
-        uint16_t pwm[IOMCU_MAX_CHANNELS];
-        uint8_t safety_pwm_set;
-        uint8_t safety_pwm_sent;
-        uint16_t safety_pwm[IOMCU_MAX_CHANNELS];
+        uint16_t pwm[IOMCU_MAX_RC_CHANNELS];
         uint16_t safety_mask;
-        uint16_t failsafe_pwm[IOMCU_MAX_CHANNELS];
+        uint16_t failsafe_pwm[IOMCU_MAX_RC_CHANNELS];
         uint8_t failsafe_pwm_set;
         uint8_t failsafe_pwm_sent;
+        uint16_t channel_mask;
     } pwm_out;
 
     // read back pwm values
     struct {
-        uint16_t pwm[IOMCU_MAX_CHANNELS];
+        uint16_t pwm[IOMCU_MAX_RC_CHANNELS];
     } pwm_in;
 
     // output rates
@@ -188,7 +285,32 @@ private:
         uint16_t chmask;
         uint16_t default_freq = 50;
         uint16_t sbus_rate_hz;
+        bool oneshot_enabled;
+        bool brushed_enabled;
     } rate;
+
+    struct {
+        uint16_t period_us;
+        uint16_t rate;
+    } dshot_rate;
+
+#if HAL_WITH_IO_MCU_BIDIR_DSHOT
+    // bi-directional dshot erpm values
+    struct page_dshot_erpm dshot_erpm;
+    struct page_dshot_telem dshot_telem[IOMCU_MAX_TELEM_CHANNELS/4];
+    uint8_t esc_group;
+#endif
+    // queue of dshot commands that need sending
+    ObjectBuffer<page_dshot> dshot_command_queue{8};
+
+    struct page_GPIO GPIO;
+    // output mode values
+    struct page_mode_out mode_out;
+
+#if AP_IOMCU_PROFILED_SUPPORT_ENABLED
+    // profiled control
+    struct page_profiled profiled {0, 255, 255, 255}; // by default, white
+#endif
 
     // IMU heater duty cycle
     uint8_t heater_duty_cycle;
@@ -203,16 +325,26 @@ private:
     bool detected_io_reset;
     bool initialised;
     bool is_chibios_backend;
+#if AP_IOMCU_PROFILED_SUPPORT_ENABLED
+    bool use_safety_as_led;
+#endif
 
     uint32_t protocol_fail_count;
     uint32_t protocol_count;
+    uint32_t total_errors;
+    uint32_t num_delayed;
     uint32_t last_iocmu_timestamp_ms;
+    uint32_t read_status_errors;
+    uint32_t read_status_ok;
+    uint32_t last_rc_protocols;
 
     // firmware upload
     const char *fw_name = "io_firmware.bin";
-    uint8_t *fw;
+    const char *dshot_fw_name = "io_firmware_dshot.bin";
+    const uint8_t *fw;
     uint32_t fw_size;
 
+    size_t write_wait(const uint8_t *pkt, uint8_t len);
     bool upload_fw(void);
     bool recv_byte_with_timeout(uint8_t *c, uint32_t timeout_ms);
     bool recv_bytes(uint8_t *p, uint32_t count);
@@ -231,6 +363,10 @@ private:
     bool check_crc(void);
     void handle_repeated_failures();
     void check_iomcu_reset();
+
+    void write_log();  // handle onboard logging
+
+    static AP_IOMCU *singleton;
 
     enum {
         PROTO_NOP               = 0x00,
@@ -262,6 +398,10 @@ private:
 
         PROG_MULTI_MAX    = 248,      /**< protocol max is 255, must be multiple of 4 */
     };
+};
+
+namespace AP {
+    AP_IOMCU *iomcu(void);
 };
 
 #endif // HAL_WITH_IO_MCU

@@ -1,7 +1,11 @@
 #pragma once
 
+#include "AC_Avoidance_config.h"
+
+#if AP_OAPATHPLANNER_ENABLED
+
 #include <AP_Common/AP_Common.h>
-#include <AP_HAL/AP_HAL.h>
+#include <AP_Common/AP_ExpandingArray.h>
 
 /*
  * Visibility graph used by Dijkstra's algorithm for path planning around fence, stay-out zones and moving obstacles
@@ -9,17 +13,14 @@
 class AP_OAVisGraph {
 public:
     AP_OAVisGraph();
-    AP_OAVisGraph(uint8_t size);
 
-    /* Do not allow copies */
-    AP_OAVisGraph(const AP_OAVisGraph &other) = delete;
-    AP_OAVisGraph &operator=(const AP_OAVisGraph&) = delete;
+    CLASS_NO_COPY(AP_OAVisGraph);  /* Do not allow copies */
 
     // types of items held in graph
     enum OAType : uint8_t {
         OATYPE_SOURCE = 0,
         OATYPE_DESTINATION,
-        OATYPE_FENCE_POINT
+        OATYPE_INTERMEDIATE_POINT,
     };
 
     // support up to 255 items of each type
@@ -39,25 +40,23 @@ public:
         float distance_cm;  // distance between the items
     };
 
-    // initialise array to given size
-    bool init(uint8_t size);
-
     // clear all elements from graph
     void clear() { _num_items = 0; }
 
     // get number of items in visibility graph table
-    uint8_t num_items() const { return _num_items; }
+    uint16_t num_items() const { return _num_items; }
 
     // add item to visiblity graph, returns true on success, false if graph is full
     bool add_item(const OAItemID &id1, const OAItemID &id2, float distance_cm);
 
     // allow accessing graph as an array, 0 indexed
     // Note: no protection against out-of-bounds accesses so use with num_items()
-    const VisGraphItem& operator[](uint8_t i) const { return _items[i]; }
+    const VisGraphItem& operator[](uint16_t i) const { return _items[i]; }
 
 private:
 
-    VisGraphItem *_items;
-    uint8_t _num_items_max;
-    uint8_t _num_items;
+    AP_ExpandingArray<VisGraphItem> _items;
+    uint16_t _num_items;
 };
+
+#endif  // AP_OAPATHPLANNER_ENABLED

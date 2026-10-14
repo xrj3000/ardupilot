@@ -18,13 +18,16 @@
  */
 #pragma once
 
-#include <AP_HAL/AP_HAL.h>
-#include <AP_RCProtocol/AP_RCProtocol.h>
-#include "RCInput.h"
-#include <stdarg.h>
+#include <AP_HAL/AP_HAL_Boards.h>
 
 #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DISCO || \
-    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_BLUE
+    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_BLUE || \
+    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_VNAV || \
+    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIGATOR || \
+    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIO2 || \
+    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_EDGE || \
+    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_PILOTPI || \
+    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_T3_GEM_O1
 
 namespace Linux {
 
@@ -38,12 +41,13 @@ private:
     int open_sbus(const char *path);
     int open_115200(const char *path);
 
-    const char *dev_sbus;
+    const char *dev_inverted;
     const char *dev_115200;
 
-    int fd_sbus;
+    int fd_inverted;
     int fd_115200;
-    AP_RCProtocol rcp;
+    uint32_t last_frame_ms;
+    bool inverted_is_115200;
 };
 };
 

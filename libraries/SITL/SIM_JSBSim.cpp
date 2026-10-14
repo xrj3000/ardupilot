@@ -13,8 +13,12 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 /*
-  simulator connector for ardupilot version of JSBSim
+  simulator connector for JSBSim
 */
+
+#include "SIM_config.h"
+
+#if AP_SIM_JSBSIM_ENABLED
 
 #include "SIM_JSBSim.h"
 
@@ -36,8 +40,8 @@ namespace SITL {
 
 #define DEBUG_JSBSIM 1
 
-JSBSim::JSBSim(const char *home_str, const char *frame_str) :
-    Aircraft(home_str, frame_str),
+JSBSim::JSBSim(const char *frame_str) :
+    Aircraft(frame_str),
     sock_control(false),
     sock_fgfdm(true),
     initialised(false),
@@ -60,11 +64,6 @@ JSBSim::JSBSim(const char *home_str, const char *frame_str) :
     if (model_name != nullptr) {
         jsbsim_model = model_name + 1;
     }
-    control_port = 5505 + instance*10;
-    fdm_port = 5504 + instance*10;
-
-    printf("JSBSim backend started: control_port=%u fdm_port=%u\n",
-           control_port, fdm_port);
 }
 
 /*
@@ -72,6 +71,12 @@ JSBSim::JSBSim(const char *home_str, const char *frame_str) :
  */
 bool JSBSim::create_templates(void)
 {
+	control_port = 5505 + instance*10;
+	fdm_port = 5504 + instance*10;
+
+	printf("JSBSim backend started: instance=%u control_port=%u fdm_port=%u\n",
+		   instance, control_port, fdm_port);
+		   
     if (created_templates) {
         return true;
     }
@@ -186,6 +191,9 @@ bool JSBSim::start_JSBSim(void)
 
     int p[2];
     int devnull = open("/dev/null", O_RDWR|O_CLOEXEC);
+    if (devnull == -1) {
+        AP_HAL::panic("Unable to open /dev/null");
+    }
     if (pipe(p) != 0) {
         AP_HAL::panic("Unable to create pipe");
     }
@@ -254,7 +262,7 @@ bool JSBSim::start_JSBSim(void)
 /*
   check for stdout from JSBSim
  */
-void JSBSim::check_stdout(void)
+void JSBSim::check_stdout(void) const
 {
     char line[100];
     ssize_t ret = ::read(jsbsim_stdout, line, sizeof(line));
@@ -268,7 +276,7 @@ void JSBSim::check_stdout(void)
 /*
   a simple function to wait for a string on jsbsim_stdout
  */
-bool JSBSim::expect(const char *str)
+bool JSBSim::expect(const char *str) const
 {
     const char *basestr = str;
     while (*str) {
@@ -346,7 +354,7 @@ void JSBSim::send_servos(const struct sitl_input &input)
         float ch1 = aileron;
         float ch2 = elevator;
         aileron  = (ch2-ch1)/2.0f;
-        // the minus does away with the need for RC2_REV=-1
+        // the minus does away with the need for RC2_REVERSED=-1
         elevator = -(ch2+ch1)/2.0f;
     } else if (frame == FRAME_VTAIL) {
         // fake a vtail plane
@@ -427,15 +435,18 @@ void JSBSim::recv_fdm(const struct sitl_input &input)
     accel_body = Vector3f(fdm.A_X_pilot, fdm.A_Y_pilot, fdm.A_Z_pilot) * FEET_TO_METERS;
 
     double p, q, r;
-    SITL::convert_body_frame(degrees(fdm.phi), degrees(fdm.theta),
+    SIM::convert_body_frame(degrees(fdm.phi), degrees(fdm.theta),
                              degrees(fdm.phidot), degrees(fdm.thetadot), degrees(fdm.psidot),
                              &p, &q, &r);
     gyro = Vector3f(p, q, r);
 
     velocity_ef = Vector3f(fdm.v_north, fdm.v_east, fdm.v_down) * FEET_TO_METERS;
-    location.lat = degrees(fdm.latitude) * 1.0e7;
-    location.lng = degrees(fdm.longitude) * 1.0e7;
-    location.alt = fdm.agl*100 + home.alt;
+    location = {
+        int32_t(RAD_TO_DEG_DOUBLE * fdm.latitude * 1.0e7),
+        int32_t(RAD_TO_DEG_DOUBLE * fdm.longitude * 1.0e7),
+        int32_t(fdm.agl*100 + home.alt),
+        Location::AltFrame::ABSOLUTE
+    };
     dcm.from_euler(fdm.phi, fdm.theta, fdm.psi);
     airspeed = fdm.vcas * KNOTS_TO_METERS_PER_SECOND;
     airspeed_pitot = airspeed;
@@ -443,8 +454,8 @@ void JSBSim::recv_fdm(const struct sitl_input &input)
     // update magnetic field
     update_mag_field_bf();
     
-    rpm1 = fdm.rpm[0];
-    rpm2 = fdm.rpm[1];
+    rpm[0] = fdm.rpm[0];
+    rpm[1] = fdm.rpm[1];
     
     time_now_us = fdm.cur_time;
 }
@@ -475,9 +486,12 @@ void JSBSim::update(const struct sitl_input &input)
     }
     send_servos(input);
     recv_fdm(input);
+    update_battery();
     adjust_frame_time(rate_hz);
     sync_frame_time();
     drain_control_socket();
 }
 
 } // namespace SITL
+
+#endif  // AP_SIM_JSBSIM_ENABLED

@@ -31,8 +31,7 @@ class ChibiOS::SoftSigReaderInt {
 public:
     SoftSigReaderInt();
     /* Do not allow copies */
-    SoftSigReaderInt(const SoftSigReaderInt &other) = delete;
-    SoftSigReaderInt &operator=(const SoftSigReaderInt&) = delete;
+    CLASS_NO_COPY(SoftSigReaderInt);
 
     // get singleton
     static SoftSigReaderInt *get_singleton(void)
@@ -42,12 +41,13 @@ public:
 
     void init(EICUDriver* icu_drv, eicuchannel_t chan);
     bool read(uint32_t &widths0, uint32_t &widths1);
+    void disable(void);
 private:
     // singleton
     static SoftSigReaderInt *_singleton;
 
     static void _irq_handler(EICUDriver *eicup, eicuchannel_t channel);
-    
+
     static eicuchannel_t get_pair_channel(eicuchannel_t channel);
     typedef struct PACKED {
         uint16_t w0;
@@ -62,4 +62,3 @@ private:
 };
 
 #endif // HAL_USE_EICU
-

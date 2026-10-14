@@ -1,30 +1,36 @@
-#!/usr/bin/env python
+'''
+Drive a BalanceBot in SITL
 
-# Drive balancebot in SITL
-from __future__ import print_function
+AP_FLAKE8_CLEAN
+
+'''
 
 import os
 
-from apmrover2 import AutoTestRover
-from common import AutoTest
+import vehicle_test_suite
+
+from rover import AutoTestRover
+from vehicle_test_suite import NotAchievedException
 
 # get location of scripts
 testdir = os.path.dirname(os.path.realpath(__file__))
 
-def log_name(self):
-    return "BalanceBot"
 
 class AutoTestBalanceBot(AutoTestRover):
 
+    def log_name(self):
+        return "BalanceBot"
+
     def vehicleinfo_key(self):
-        return "APMrover2"
+        return "Rover"
 
     def init(self):
         if self.frame is None:
             self.frame = 'balancebot'
         super(AutoTestBalanceBot, self).init()
 
-    def test_do_set_mode_via_command_long(self):
+    def DO_SET_MODE(self):
+        '''Set mode via MAV_COMMAND_DO_SET_MODE'''
         self.do_set_mode_via_command_long("HOLD")
         self.do_set_mode_via_command_long("MANUAL")
 
@@ -41,50 +47,73 @@ class AutoTestBalanceBot(AutoTestRover):
         '''balancebot tends to wander backwards, away from the target'''
         return 8
 
-    def drive_rtl_mission(self):
+    def DriveRTL(self):
+        '''Drive an RTL Mission'''
         # if we Hold then the balancebot continues to wander
-        # indefinitely at ~1m/s
-        self.set_parameter("MIS_DONE_BEHAVE", 1)
-        super(AutoTestBalanceBot, self).drive_rtl_mission()
+        # indefinitely at ~1m/s, hence we set to Acro
+        self.set_parameter("MIS_DONE_BEHAVE", 2)
+        super(AutoTestBalanceBot, self).DriveRTL()
+
+    def TestWheelEncoder(self):
+        '''make sure wheel encoders are generally working'''
+        ex = None
+        try:
+            self.set_parameter("WENC_TYPE", 10)
+            self.set_parameter("AHRS_EKF_TYPE", 10)
+            self.reboot_sitl()
+            self.set_parameter("WENC2_TYPE", 10)
+            self.set_parameter("WENC_POS_Y", 0.075)
+            self.set_parameter("WENC2_POS_Y", -0.075)
+            self.reboot_sitl()
+            self.change_mode("HOLD")
+            self.wait_ready_to_arm()
+            self.change_mode("ACRO")
+            self.arm_vehicle()
+            self.set_rc(3, 1600)
+
+            m = self.assert_receive_message('WHEEL_DISTANCE', timeout=5)
+
+            tstart = self.get_sim_time()
+            while True:
+                if self.get_sim_time_cached() - tstart > 10:
+                    break
+                dist_home = self.distance_to_home(use_cached_home=True)
+                m = self.mav.messages.get("WHEEL_DISTANCE")
+                delta = abs(m.distance[0] - dist_home)
+                self.progress("dist-home=%f wheel-distance=%f delta=%f" %
+                              (dist_home, m.distance[0], delta))
+                if delta > 5:
+                    raise NotAchievedException("wheel distance incorrect")
+            self.disarm_vehicle()
+        except Exception as e:  # noqa: BLE001
+            self.progress("Caught exception: %s" %
+                          self.get_exception_stacktrace(e))
+            self.disarm_vehicle()
+            ex = e
+        self.reboot_sitl()
+        if ex is not None:
+            raise ex
+
+    def DriveMission(self):
+        '''Drive Mission rover1.txt'''
+        self.drive_mission("balancebot1.txt", strict=False)
 
     def tests(self):
         '''return list of all tests'''
 
         '''note that while AutoTestBalanceBot inherits from Rover we don't
 inherit Rover's tests!'''
-        ret = AutoTest.tests(self)
+        ret = vehicle_test_suite.TestSuite.tests(self)
 
         ret.extend([
-
-            ("DriveRTL",
-             "Drive an RTL Mission",
-             self.drive_rtl_mission),
-
-            ("DriveMission",
-             "Drive Mission %s" % "balancebot1.txt",
-             lambda: self.drive_mission("balancebot1.txt")),
-
-            ("GetBanner", "Get Banner", self.do_get_banner),
-
-            ("GetCapabilities",
-             "Get Capabilities",
-             self.do_get_autopilot_capabilities),
-
-            ("DO_SET_MODE",
-             "Set mode via MAV_COMMAND_DO_SET_MODE",
-             self.test_do_set_mode_via_command_long),
-
-            ("ServoRelayEvents",
-             "Test ServoRelayEvents",
-             self.test_servorelayevents),
-
-            ("DownLoadLogs", "Download logs", lambda:
-             self.log_download(
-                 self.buildlogs_path("APMrover2-log.bin"),
-                 upload_logs=len(self.fail_list) > 0)),
-            ])
+            self.DriveRTL,
+            self.DriveMission,
+            self.TestWheelEncoder,
+            self.MAV_CMD_DO_SEND_BANNER,
+            self.DO_SET_MODE,
+            self.ServoRelayEvents,
+        ])
         return ret
 
     def default_mode(self):
         return 'MANUAL'
-

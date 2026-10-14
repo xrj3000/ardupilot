@@ -1,7 +1,7 @@
 #pragma once
 
 #include <GCS_MAVLink/GCS.h>
-#include "GCS_Mavlink.h"
+#include "GCS_MAVLink_Plane.h"
 
 class GCS_Plane : public GCS
 {
@@ -9,16 +9,12 @@ class GCS_Plane : public GCS
 
 public:
 
-    // return the number of valid GCS objects
-    uint8_t num_gcs() const override { return ARRAY_SIZE(_chan); };
-
-    // return GCS link at offset ofs
-    GCS_MAVLINK_Plane &chan(const uint8_t ofs) override {
-        return _chan[ofs];
-    };
-    const GCS_MAVLINK_Plane &chan(const uint8_t ofs) const override {
-        return _chan[ofs];
-    };
+    // the following define expands to a pair of methods to retrieve a
+    // pointer to an object of the correct subclass for the link at
+    // offset ofs.  These are of the form:
+    // GCS_MAVLINK_XXXX *chan(const uint8_t ofs) override;
+    // const GCS_MAVLINK_XXXX *chan(const uint8_t ofs) override const;
+    GCS_MAVLINK_CHAN_METHOD_DEFINITIONS(GCS_MAVLINK_Plane);
 
 protected:
 
@@ -26,8 +22,12 @@ protected:
     uint32_t custom_mode() const override;
     MAV_TYPE frame_type() const override;
 
-private:
+    GCS_MAVLINK_Plane *new_gcs_mavlink_backend(AP_HAL::UARTDriver &uart) override {
+        return NEW_NOTHROW GCS_MAVLINK_Plane(uart);
+    }
 
-    GCS_MAVLINK_Plane _chan[MAVLINK_COMM_NUM_BUFFERS];
-
+    AP_GPS_FixType min_status_for_gps_healthy() const override {
+        // NO_FIX simply excludes NO_GPS
+        return AP_GPS_FixType::FIX_3D;
+    }
 };

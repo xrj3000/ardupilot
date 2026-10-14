@@ -20,6 +20,9 @@
 #include "lauxlib.h"
 #include "lualib.h"
 
+#if defined(ARDUPILOT_BUILD)
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
 
 static int luaB_print (lua_State *L) {
   int n = lua_gettop(L);  /* number of arguments */
@@ -452,12 +455,12 @@ static int luaB_tostring (lua_State *L) {
 
 static const luaL_Reg base_funcs[] = {
   {"assert", luaB_assert},
-  {"collectgarbage", luaB_collectgarbage},
-  {"dofile", luaB_dofile},
+//  {"collectgarbage", luaB_collectgarbage},
+//  {"dofile", luaB_dofile},
   {"error", luaB_error},
-  {"getmetatable", luaB_getmetatable},
+//  {"getmetatable", luaB_getmetatable},
   {"ipairs", luaB_ipairs},
-  {"loadfile", luaB_loadfile},
+//  {"loadfile", luaB_loadfile},
   {"load", luaB_load},
 #if defined(LUA_COMPAT_LOADSTRING)
   {"loadstring", luaB_load},
@@ -465,20 +468,20 @@ static const luaL_Reg base_funcs[] = {
   {"next", luaB_next},
   {"pairs", luaB_pairs},
   {"pcall", luaB_pcall},
-  {"print", luaB_print},
-  {"rawequal", luaB_rawequal},
-  {"rawlen", luaB_rawlen},
-  {"rawget", luaB_rawget},
-  {"rawset", luaB_rawset},
-  {"select", luaB_select},
+//  {"print", luaB_print},
+//  {"rawequal", luaB_rawequal},
+//  {"rawlen", luaB_rawlen},
+//  {"rawget", luaB_rawget},
+//  {"rawset", luaB_rawset},
+//  {"select", luaB_select},
   {"setmetatable", luaB_setmetatable},
   {"tonumber", luaB_tonumber},
   {"tostring", luaB_tostring},
   {"type", luaB_type},
-  {"xpcall", luaB_xpcall},
+//  {"xpcall", luaB_xpcall},
   /* placeholders */
-  {"_G", NULL},
-  {"_VERSION", NULL},
+//  {"_G", NULL},
+//  {"_VERSION", NULL},
   {NULL, NULL}
 };
 
@@ -496,3 +499,15 @@ LUAMOD_API int luaopen_base (lua_State *L) {
   return 1;
 }
 
+LUAMOD_API int luaopen_base_sandbox(lua_State *L) {
+  luaL_setfuncs(L, base_funcs, 0);
+  // for debugging what has been loaded
+  // lua_pushvalue(L, -1);
+  // lua_setfield(L, -2, "_Sandbox");
+  // lua_pushglobaltable(L);
+  // lua_pushvalue(L, -1);
+  // lua_setfield(L, -3, "_G");
+  // lua_pop(L, 1);
+
+  return 1;
+}

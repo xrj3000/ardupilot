@@ -1,22 +1,15 @@
 #include "Tracker.h"
 
-#if LOGGING_ENABLED == ENABLED
+#if HAL_LOGGING_ENABLED
 
 // Code to Write and Read packets from AP_Logger log memory
 
 // Write an attitude packet
 void Tracker::Log_Write_Attitude()
 {
-    Vector3f targets;
-    targets.y = nav_status.pitch * 100.0f;
-    targets.z = wrap_360_cd(nav_status.bearing * 100.0f);
-    logger.Write_Attitude(ahrs, targets);
-    logger.Write_EKF(ahrs);
-    logger.Write_AHRS2(ahrs);
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-    sitl.Log_Write_SIMSTATE();
-#endif
-    logger.Write_POS(ahrs);
+    const Vector3f targets{0.0f, nav_status.pitch, nav_status.bearing};
+    ahrs.Write_Attitude(targets);
+    AP::ahrs().Log_Write();
 }
 
 struct PACKED log_Vehicle_Baro {
@@ -65,35 +58,42 @@ void Tracker::Log_Write_Vehicle_Pos(int32_t lat, int32_t lng, int32_t alt, const
     logger.WriteBlock(&pkt, sizeof(pkt));
 }
 
+// @LoggerMessage: VBAR
+// @Description: Information received from tracked vehicle; barometer data
+// @Field: TimeUS: Time since system startup
+// @Field: Press: vehicle barometric pressure
+// @Field: AltDiff: altitude difference based on difference on barometric pressure
+
+// @LoggerMessage: VPOS
+// @Description: Information received from tracked vehicle; barometer position data
+// @Field: TimeUS: Time since system startup
+// @Field: Lat: tracked vehicle latitude
+// @Field: Lng: tracked vehicle longitude
+// @Field: Alt: tracked vehicle altitude
+// @Field: VelX: tracked vehicle velocity, latitude component
+// @Field: VelY: tracked vehicle velocity, longitude component
+// @Field: VelZ: tracked vehicle velocity, vertical component, down
+
 // type and unit information can be found in
 // libraries/AP_Logger/Logstructure.h; search for "log_Units" for
 // units and "Format characters" for field type information
 const struct LogStructure Tracker::log_structure[] = {
     LOG_COMMON_STRUCTURES,
     {LOG_V_BAR_MSG, sizeof(log_Vehicle_Baro),
-        "VBAR", "Qff", "TimeUS,Press,AltDiff", "sPm", "F00" },
+        "VBAR", "Qff", "TimeUS,Press,AltDiff", "sPm", "F00" , true },
     {LOG_V_POS_MSG, sizeof(log_Vehicle_Pos),
-        "VPOS", "QLLefff", "TimeUS,Lat,Lng,Alt,VelX,VelY,VelZ", "sddmnnn", "FGGB000" }
+       "VPOS", "QLLefff", "TimeUS,Lat,Lng,Alt,VelX,VelY,VelZ", "sddmnnn", "FGGB000", true }
 };
+
+uint8_t Tracker::get_num_log_structures() const
+{
+    return ARRAY_SIZE(log_structure);
+}
 
 void Tracker::Log_Write_Vehicle_Startup_Messages()
 {
-    logger.Write_Mode(control_mode, MODE_REASON_INITIALISED);
+    logger.Write_Mode((uint8_t)mode->number(), ModeReason::INITIALISED);
     gps.Write_AP_Logger_Log_Startup_messages();
 }
 
-void Tracker::log_init(void)
-{
-    logger.Init(log_structure, ARRAY_SIZE(log_structure));
-}
-
-#else // LOGGING_ENABLED
-
-void Tracker::Log_Write_Attitude(void) {}
-
-void Tracker::log_init(void) {}
-void Tracker::Log_Write_Vehicle_Pos(int32_t lat, int32_t lng, int32_t alt, const Vector3f& vel) {}
-void Tracker::Log_Write_Vehicle_Baro(float pressure, float altitude) {}
-void Tracker::Log_Write_Vehicle_Startup_Messages() {}
-
-#endif // LOGGING_ENABLED
+#endif // HAL_LOGGING_ENABLED

@@ -1,10 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -e
 set -x
 
-WP_Auth_Dir="$HOME/WP_Auth"
-PARAMS_DIR="../buildlogs/Parameters"
+if [ "x$BUILDLOGS" = "x" ]; then
+    BUILDLOGS="../buildlogs"
+fi
+PARAMS_DIR="$BUILDLOGS/Parameters"
 
 # work from either APM directory or above
 [ -d ArduPlane ] || cd APM
@@ -13,37 +15,55 @@ PARAMS_DIR="../buildlogs/Parameters"
 
 generate_parameters() {
     VEHICLE="$1"
-    URL="$2"
-    AUTHFILE="$3"
-    POST_TITLE="$4"
 
-    # generate Parameters.html, Parameters.rst etc etc:
-    ./Tools/autotest/param_metadata/param_parse.py --vehicle $VEHICLE
-
-    # (Possibly) upload to the Wiki:
-    if [ -d "$WP_Auth_Dir" ]; then
-	if [ "$URL" != "NONE" ]; then
-	    AUTHFILEPATH="$WP_Auth_Dir/$AUTHFILE"
-	    ./Tools/scripts/update_wiki.py --url "$URL" $(cat $AUTHFILEPATH) --post-title="$POST_TITLE" Parameters.html
-	fi
+    TAG_PREFIX="$VEHICLE"
+    case "$VEHICLE" in
+        ArduCopter) TAG_PREFIX="Copter" ;;
+        ArduPlane) TAG_PREFIX="Plane" ;;
+        ArduSub) TAG_PREFIX="Sub" ;;
+        AntennaTracker) TAG_PREFIX="Tracker" ;;
+    esac
+    GIT_TAG=$(git describe --tags --exact-match --match "$TAG_PREFIX-[0-9]*.[0-9]*.[0-9]*" 2>/dev/null || true)
+    if [ -z "$GIT_TAG" ] && [ "$VEHICLE" = "ArduSub" ]; then
+        GIT_TAG=$(git describe --tags --exact-match --match "ArduSub-[0-9]*.[0-9]*.[0-9]*" 2>/dev/null || true)
     fi
+
+    # Generate Parameters.html, Parameters.rst etc etc.  The flat files are
+    # release metadata, so do not include the changing commit SHA.
+    GIT_TAG_ARG=""
+    [ -n "$GIT_TAG" ] && GIT_TAG_ARG="--git-tag $GIT_TAG"
+    # shellcheck disable=SC2086
+    ./Tools/autotest/param_metadata/param_parse.py --vehicle $VEHICLE $GIT_TAG_ARG
 
     # stash some of the results away:
     VEHICLE_PARAMS_DIR="$PARAMS_DIR/$VEHICLE"
     mkdir -p "$VEHICLE_PARAMS_DIR"
-    /bin/cp Parameters.wiki Parameters.html *.pdef.xml "$VEHICLE_PARAMS_DIR/"
+    /bin/cp Parameters.html *.pdef.xml "$VEHICLE_PARAMS_DIR/"
+    gzip -9 <"$VEHICLE_PARAMS_DIR"/apm.pdef.xml >"$VEHICLE_PARAMS_DIR"/apm.pdef.xml.gz.new && mv "$VEHICLE_PARAMS_DIR"/apm.pdef.xml.gz.new "$VEHICLE_PARAMS_DIR"/apm.pdef.xml.gz
+    xz -e <"$VEHICLE_PARAMS_DIR"/apm.pdef.xml >"$VEHICLE_PARAMS_DIR"/apm.pdef.xml.xz.new && mv "$VEHICLE_PARAMS_DIR"/apm.pdef.xml.xz.new "$VEHICLE_PARAMS_DIR"/apm.pdef.xml.xz
     if [ -e "Parameters.rst" ]; then
 	/bin/cp Parameters.rst "$VEHICLE_PARAMS_DIR/"
     fi
+    if [ -e "ParametersLatex.rst" ]; then
+    /bin/cp ParametersLatex.rst "$VEHICLE_PARAMS_DIR/"
+    fi
+    F="apm.pdef.json"
+    if [ -e "$F" ]; then
+	    /bin/cp "$F" "$VEHICLE_PARAMS_DIR/"
+        xz -e <"$VEHICLE_PARAMS_DIR"/"$F" >"$VEHICLE_PARAMS_DIR"/"$F.xz.new" && mv "$VEHICLE_PARAMS_DIR"/"$F.xz.new" "$VEHICLE_PARAMS_DIR"/"$F.xz"
+    fi
 }
 
+generate_parameters ArduPlane
 
-generate_parameters ArduPlane http://plane.ardupilot.org plane.auth 'Plane Parameters'
+generate_parameters ArduCopter
 
-generate_parameters ArduCopter http://copter.ardupilot.org copter.auth 'Copter Parameters'
+generate_parameters Rover
 
-generate_parameters APMrover2 http://rover.ardupilot.org rover.auth 'Rover Parameters'
+generate_parameters ArduSub
 
-generate_parameters ArduSub http://sub.ardupilot.org sub.auth 'Sub Parameters'
+generate_parameters AntennaTracker
 
-generate_parameters AntennaTracker NONE NONE 'AntennaTracker Parameters'
+generate_parameters AP_Periph
+
+generate_parameters Blimp

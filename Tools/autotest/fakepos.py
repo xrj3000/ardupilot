@@ -1,11 +1,16 @@
-#!/usr/bin/env python
-from __future__ import print_function
+#!/usr/bin/env python3
+
 import errno
 import socket
 import struct
 import sys
 import time
-from math import cos, fabs, radians, sin, sqrt
+
+from math import cos
+from math import fabs
+from math import radians
+from math import sin
+from math import sqrt
 
 
 class udp_out(object):
@@ -36,21 +41,6 @@ class udp_out(object):
             pass
 
 
-def ft2m(x):
-    return x * 0.3048
-
-
-def m2ft(x):
-    return x / 0.3048
-
-
-def kt2mps(x):
-    return x * 0.514444444
-
-
-def mps2kt(x):
-    return x / 0.514444444
-
 udp = udp_out("127.0.0.1:5501")
 
 latitude = -35
@@ -60,14 +50,8 @@ heading = 0.0
 speedN = 0
 speedE = 0.0
 speedD = 0.0
-xAccel = 0.0
-yAccel = 0.0
-zAccel = 0.0
 rollRate = 0.0
-pitchRate = 0.0
 yawRate = 0.0
-rollDeg = 0.0
-pitchDeg = 0.0
 yawDeg = 0.0
 airspeed = 0
 magic = 0x4c56414f

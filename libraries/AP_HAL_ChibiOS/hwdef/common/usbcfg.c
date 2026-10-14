@@ -31,13 +31,18 @@
 
 #include <stdlib.h>
 #include <string.h>
-
+#include "usbcfg.h"
 // #pragma GCC optimize("O0")
 
-#ifdef HAL_USB_PRODUCT_ID
+#if defined(HAL_USB_PRODUCT_ID) && !HAL_HAVE_DUAL_USB_CDC
 
 /* Virtual serial port over USB.*/
 SerialUSBDriver SDU1;
+
+static cdc_linecoding_t linecoding = {
+  {0x00, 0x96, 0x00, 0x00},             /* 38400.                           */
+  LC_STOP_1, LC_PARITY_NONE, 8
+};
 
 /*
  * Endpoints to be used for USBD1.
@@ -178,69 +183,7 @@ static USBDescriptor vcom_strings[] = {
   {0, NULL}, // version
 };
 
-#define USB_DESC_MAX_STRLEN 100
 static uint8_t vcom_buffers[3][2+2*USB_DESC_MAX_STRLEN];
-
-/*
-  check if one string contains another
- */
-static bool string_contains(const char *haystack, const char *needle)
-{
-    uint8_t needle_len = strlen(needle);
-    while (*haystack) {
-        if (strncmp(haystack, needle, needle_len) == 0) {
-            return true;
-        }
-        haystack++;
-    }
-    return false;
-}
-
-/*
-  handle substitution of variables in strings for USB descriptors
- */
-static void string_substitute(const char *str, char *str2)
-{
-    const char *board = "%BOARD%";
-    const char *serial = "%SERIAL%";
-    uint8_t new_len = strlen(str);
-    if (string_contains(str, board)) {
-        new_len += strlen(HAL_BOARD_NAME) - strlen(board);
-    }
-    if (string_contains(str, serial)) {
-        new_len += 24 - strlen(serial);
-    }
-    if (new_len+1 > USB_DESC_MAX_STRLEN) {
-        strcpy(str2, str);
-        return;
-    }
-    char *p = str2;
-    while (*str) {
-        char c = *str;
-        if (c == '%') {
-            if (strncmp(str, board, strlen(board)) == 0) {
-                memcpy(p, HAL_BOARD_NAME, strlen(HAL_BOARD_NAME));
-                str += 7;
-                p += strlen(HAL_BOARD_NAME);
-                continue;
-            }
-            if (strncmp(str, serial, strlen(serial)) == 0) {
-                const char *hex = "0123456789ABCDEF";
-                const uint8_t *cpu_id = (const uint8_t *)UDID_START;
-                uint8_t i;
-                for (i=0; i<12; i++) {
-                    *p++ = hex[(cpu_id[i]>>4)&0xF];
-                    *p++ = hex[cpu_id[i]&0xF];
-                }
-                str += 8;
-                continue;
-            }
-        }
-        *p++ = *str++;
-    }
-    *p = 0;
-}
-
 
 /*
   dynamically allocate a USB descriptor string
@@ -295,6 +238,32 @@ static const USBDescriptor *get_descriptor(USBDriver *usbp,
   return NULL;
 }
 
+/*
+    get the requested usb baudrate - 0 = none
+*/
+#if HAL_USE_SERIAL_USB
+uint32_t get_usb_baud(uint16_t endpoint_id)
+{
+    if (endpoint_id == 0) {
+        uint32_t rate;
+        memcpy(&rate, &linecoding.dwDTERate[0], sizeof(rate));
+        return rate;
+    }
+    return 0;
+}
+
+/*
+    get the requested usb parity.  Valid if get_usb_baud() returned non-zero
+*/
+uint8_t get_usb_parity(uint16_t endpoint_id)
+{
+      if (endpoint_id == 0) {
+          return linecoding.bParityType;
+      }
+
+      return 0;
+}
+#endif
 /**
  * @brief   IN EP1 state.
  */
@@ -392,6 +361,33 @@ static void usb_event(USBDriver *usbp, usbevent_t event) {
 }
 
 /*
+ * Handling messages not implemented in the default handler nor in the
+ * SerialUSB handler.
+ */
+static bool requests_hook(USBDriver *usbp) {
+  if (((usbp->setup[0] & USB_RTYPE_RECIPIENT_MASK) == USB_RTYPE_RECIPIENT_INTERFACE) &&
+      (usbp->setup[1] == USB_REQ_SET_INTERFACE)) {
+    usbSetupTransfer(usbp, NULL, 0, NULL);
+    return true;
+  }
+  if ((usbp->setup[0] & USB_RTYPE_TYPE_MASK) == USB_RTYPE_TYPE_CLASS && usbp->setup[4] == 0x00 && usbp->setup[5] == 0x00) {
+    switch (usbp->setup[1]) {
+    case CDC_GET_LINE_CODING:
+      usbSetupTransfer(usbp, (uint8_t *)&linecoding, sizeof(linecoding), NULL);
+      return true;
+    case CDC_SET_LINE_CODING:
+      usbSetupTransfer(usbp, (uint8_t *)&linecoding, sizeof(linecoding), NULL);
+      return true;
+    case CDC_SET_CONTROL_LINE_STATE:
+      /* Nothing to do, there are no control lines.*/
+      usbSetupTransfer(usbp, NULL, 0, NULL);
+      return true;
+    }
+  }
+  return sduRequestsHook(usbp);
+}
+
+/*
  * Handles the USB driver global events.
  */
 static void sof_handler(USBDriver *usbp) {
@@ -409,15 +405,19 @@ static void sof_handler(USBDriver *usbp) {
 const USBConfig usbcfg = {
   usb_event,
   get_descriptor,
-  sduRequestsHook,
+  requests_hook,
   sof_handler
 };
 
 /*
  * Serial over USB driver configuration.
  */
-const SerialUSBConfig serusbcfg = {
+const SerialUSBConfig serusbcfg1 = {
+#if STM32_OTG2_IS_OTG1
+  &USBD2,
+#else
   &USBD1,
+#endif
   USBD1_DATA_REQUEST_EP,
   USBD1_DATA_AVAILABLE_EP,
   USBD1_INTERRUPT_REQUEST_EP

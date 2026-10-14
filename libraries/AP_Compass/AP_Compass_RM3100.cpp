@@ -19,6 +19,8 @@
  */
 #include "AP_Compass_RM3100.h"
 
+#if AP_COMPASS_RM3100_ENABLED
+
 #include <AP_HAL/AP_HAL.h>
 #include <utility>
 #include <AP_Math/AP_Math.h>
@@ -59,7 +61,6 @@
 #define GAIN_CC50 20.0f   // LSB/uT
 #define GAIN_CC100 38.0f
 #define GAIN_CC200 75.0f
-#define UTESLA_TO_MGAUSS   10.0f // uT to mGauss conversion
 
 #define TMRC    0x94    // Update rate 150Hz
 #define CMM     0x71    // read 3 axes and set data ready if 3 axes are ready
@@ -73,7 +74,7 @@ AP_Compass_Backend *AP_Compass_RM3100::probe(AP_HAL::OwnPtr<AP_HAL::Device> dev,
     if (!dev) {
         return nullptr;
     }
-    AP_Compass_RM3100 *sensor = new AP_Compass_RM3100(std::move(dev), force_external, rotation);
+    AP_Compass_RM3100 *sensor = NEW_NOTHROW AP_Compass_RM3100(std::move(dev), force_external, rotation);
     if (!sensor || !sensor->init()) {
         delete sensor;
         return nullptr;
@@ -93,8 +94,11 @@ AP_Compass_RM3100::AP_Compass_RM3100(AP_HAL::OwnPtr<AP_HAL::Device> _dev,
 
 bool AP_Compass_RM3100::init()
 {
-    if (!dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-        return false;
+    dev->get_semaphore()->take_blocking();
+
+    if (dev->bus_type() == AP_HAL::Device::BUS_TYPE_SPI) {
+        // read has high bit set for SPI
+        dev->set_read_flag(0x80);
     }
 
     // high retries for init
@@ -117,13 +121,14 @@ bool AP_Compass_RM3100::init()
         ccy1 != CCP1_DEFAULT || ccy0 != CCP0_DEFAULT ||
         ccz1 != CCP1_DEFAULT || ccz0 != CCP0_DEFAULT) {
         // couldn't read one of the cycle count registers or didn't recognize the default cycle count values
-        goto fail;
+        dev->get_semaphore()->give();
+        return false;
     }
 
     dev->setup_checked_registers(8);
 
-    dev->write_register(RM3100_TMRC_REG, TMRC, true); // cycle count z
-    dev->write_register(RM3100_CMM_REG, CMM, false); // CMM configuration
+    dev->write_register(RM3100_TMRC_REG, TMRC, true); // CMM data rate
+    dev->write_register(RM3100_CMM_REG, CMM, true); // CMM configuration
     dev->write_register(RM3100_CCX1_REG, CCP1, true); // cycle count x
     dev->write_register(RM3100_CCX0_REG, CCP0, true); // cycle count x
     dev->write_register(RM3100_CCY1_REG, CCP1, true); // cycle count y
@@ -135,32 +140,28 @@ bool AP_Compass_RM3100::init()
 
     // lower retries for run
     dev->set_retries(3);
-    
+
     dev->get_semaphore()->give();
 
     /* register the compass instance in the frontend */
-    compass_instance = register_compass();
+    dev->set_device_type(DEVTYPE_RM3100);
+    if (!register_compass(dev->get_bus_id())) {
+        return false;
+    }
 
-    printf("Found a RM3100 at address 0x%x as compass %u\n", dev->get_bus_address(), compass_instance);
-    
-    set_rotation(compass_instance, rotation);
+    DEV_PRINTF("RM3100: Found at address 0x%x as compass %u\n", dev->get_bus_address(), instance);
+
+    set_rotation(rotation);
 
     if (force_external) {
-        set_external(compass_instance, true);
+        set_external(true);
     }
     
-    dev->set_device_type(DEVTYPE_RM3100);
-    set_dev_id(compass_instance, dev->get_bus_id());
-
     // call timer() at 80Hz
     dev->register_periodic_callback(1000000U/80U,
                                     FUNCTOR_BIND_MEMBER(&AP_Compass_RM3100::timer, void));
 
     return true;
-
-fail:
-    dev->get_semaphore()->give();
-    return false;
 }
 
 void AP_Compass_RM3100::timer()
@@ -176,7 +177,6 @@ void AP_Compass_RM3100::timer()
         uint8_t magz_1;
         uint8_t magz_0;
     } data;
-    Vector3f field;
 
     int32_t magx = 0;
     int32_t magy = 0;
@@ -208,16 +208,34 @@ void AP_Compass_RM3100::timer()
     magy >>= 8;
     magz >>= 8;
 
-    // apply scaler and store in field vector
-    field(magx * _scaler, magy * _scaler, magz * _scaler);
+#ifdef AP_RM3100_REVERSAL_MASK
+    // some RM3100 builds get the polarity wrong on one or more of the
+    // elements. By setting AP_RM3100_REVERSAL_MASK in hwdef.dat you
+    // can fix it without modifying the hardware
+    if (AP_RM3100_REVERSAL_MASK & 1U) {
+        magx = -magx;
+    }
+    if (AP_RM3100_REVERSAL_MASK & 2U) {
+        magy = -magy;
+    }
+    if (AP_RM3100_REVERSAL_MASK & 4U) {
+        magz = -magz;
+    }
+#endif
 
-    accumulate_sample(field, compass_instance);
+    {
+        // apply scaler and store in field vector
+         Vector3f field{
+             magx * _scaler,
+             magy * _scaler,
+             magz * _scaler
+         };
+
+        accumulate_sample(field);
+    }
 
 check_registers:
     dev->check_next_register();
 }
 
-void AP_Compass_RM3100::read()
-{
-	drain_accumulated_samples(compass_instance);
-}
+#endif  // AP_COMPASS_RM3100_ENABLED

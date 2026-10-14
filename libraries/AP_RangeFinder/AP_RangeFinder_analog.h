@@ -1,7 +1,11 @@
 #pragma once
 
-#include "RangeFinder.h"
-#include "RangeFinder_Backend.h"
+#include "AP_RangeFinder_config.h"
+
+#if AP_RANGEFINDER_ANALOG_ENABLED
+
+#include "AP_RangeFinder.h"
+#include "AP_RangeFinder_Backend.h"
 #include "AP_RangeFinder_Params.h"
 
 class AP_RangeFinder_analog : public AP_RangeFinder_Backend
@@ -28,3 +32,5 @@ private:
 
     AP_HAL::AnalogSource *source;
 };
+
+#endif  // AP_RANGEFINDER_ANALOG_ENABLED

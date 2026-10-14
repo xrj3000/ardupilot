@@ -104,7 +104,7 @@ Menu::_run_command(bool prompt_on_enter)
         if (_argv[argc].str == nullptr || '\0' == _argv[argc].str[0])
             break;
         _argv[argc].i = atol(_argv[argc].str);
-        _argv[argc].f = atof(_argv[argc].str);      // calls strtod, > 700B !
+        _argv[argc].f = strtof(_argv[argc].str, NULL);
         argc++;
     }
     
@@ -261,11 +261,11 @@ Menu::_allocate_buffers(void)
 {
     /* only allocate if the buffers are nullptr */
     if (_inbuf == nullptr) {
-        _inbuf = new char[_commandline_max];
+        _inbuf = NEW_NOTHROW char[_commandline_max];
         memset(_inbuf, 0, _commandline_max);
     }
     if (_argv == nullptr) {
-        _argv = new arg[_args_max+1];
+        _argv = NEW_NOTHROW arg[_args_max+1];
         memset(_argv, 0, (_args_max+1) * sizeof(_argv[0]));
     }
 }

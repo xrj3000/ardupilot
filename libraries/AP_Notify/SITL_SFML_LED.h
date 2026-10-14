@@ -16,11 +16,20 @@
 */
 #pragma once
 
-#include <AP_HAL/AP_HAL.h>
+/*
+  cp libraries/AP_Scripting/examples/LED_roll.lua scripts/
+  param set SCR_ENABLE 1
+  param set SIM_LED_LAYOUT 1
+  param set SERVO10_FUNCTION 94  # script1
+  param set SERVO11_FUNCTION 132  # profiled clock
+  param set NTF_LED_TYPES 1024
+  reboot
+ */
+
+#include <AP_HAL/AP_HAL_Boards.h>
+#include <SITL/SITL.h>
 
 #ifdef WITH_SITL_RGBLED
-
-#include "RGBLed.h"
 
 #ifdef HAVE_SFML_GRAPHICS_H
 #include <SFML/Graphics.h>
@@ -28,36 +37,27 @@
 #include <SFML/Graphics.hpp>
 #endif
 
-class SITL_SFML_LED: public RGBLed
+class SITL_SFML_LED : public NotifyDevice
 {
 public:
-    SITL_SFML_LED();
-
-protected:
-    bool hw_init(void) override;
-    bool hw_set_rgb(uint8_t r, uint8_t g, uint8_t b) override;
+    SITL_SFML_LED() {}
+    bool init(void) override;
+    void update() override;
 
 private:
 
     pthread_t thread;
     void update_thread(void);
+    void update_serial_LEDs(void);
     static void *update_thread_start(void *obj);
 
-    static constexpr uint8_t height = 50;
-    static constexpr uint8_t width = height;
+    static constexpr uint8_t serialLED_size = 16;
 
-    enum class brightness {
-        LED_LOW    = 0x33,
-        LED_MEDIUM = 0x7F,
-        LED_HIGH   = 0xFF,
-        LED_OFF    = 0x00
-    };
+    static const uint8_t MAX_LEDS = 64;
 
-    uint32_t last_colour;
-
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
+    // LED layout control
+    bool layout_size(SITL::LedLayout layout, uint16_t &xsize, uint16_t &ysize);
+    bool layout_pos(SITL::LedLayout layout, uint8_t chan, uint8_t led, uint16_t &xpos, uint16_t &ypos);
 };
 
 #endif

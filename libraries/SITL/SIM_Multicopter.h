@@ -29,20 +29,25 @@ namespace SITL {
  */
 class MultiCopter : public Aircraft {
 public:
-    MultiCopter(const char *home_str, const char *frame_str);
+    MultiCopter(const char *frame_str);
+
+    ~MultiCopter() {
+        delete frame;
+    }
 
     /* update model by one time step */
     void update(const struct sitl_input &input) override;
 
     /* static object creator */
-    static Aircraft *create(const char *home_str, const char *frame_str) {
-        return new MultiCopter(home_str, frame_str);
+    static Aircraft *create(const char *frame_str) {
+        return NEW_NOTHROW MultiCopter(frame_str);
     }
 
 protected:
     // calculate rotational and linear accelerations
     void calculate_forces(const struct sitl_input &input, Vector3f &rot_accel, Vector3f &body_accel);
     Frame *frame;
+    void update_battery() override;
 };
 
 }

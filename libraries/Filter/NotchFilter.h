@@ -27,17 +27,36 @@
 
 
 template <class T>
+class HarmonicNotchFilter;
+
+template <class T>
 class NotchFilter {
 public:
+    friend class HarmonicNotchFilter<T>;
     // set parameters
     void init(float sample_freq_hz, float center_freq_hz, float bandwidth_hz, float attenuation_dB);
+    void init_with_A_and_Q(float sample_freq_hz, float center_freq_hz, float A, float Q);
     T apply(const T &sample);
     void reset();
+    float center_freq_hz() const { return _center_freq_hz; }
+    float sample_freq_hz() const { return _sample_freq_hz; }
 
-private:
-    bool initialised;
-    float b0, b1, b2, a1, a2, a0_inv;
-    T ntchsig, ntchsig1, ntchsig2, signal2, signal1;
+    // calculate attenuation and quality from provided center frequency and bandwidth
+    static void calculate_A_and_Q(float center_freq_hz, float bandwidth_hz, float attenuation_dB, float& A, float& Q); 
+
+    void disable(void) {
+        initialised = false;
+    }
+
+    // return the frequency to log for the notch
+    float logging_frequency(void) const;
+
+protected:
+
+    bool initialised, need_reset;
+    float b0, b1, b2, a1, a2;
+    float _center_freq_hz, _sample_freq_hz, _A;
+    T ntchsig1, ntchsig2, signal2, signal1;
 };
 
 /*
@@ -45,21 +64,20 @@ private:
  */
 class NotchFilterParams {
 public:
-    NotchFilterParams(void);
-    static const struct AP_Param::GroupInfo var_info[];
-
-    uint16_t center_freq_hz(void) const { return _center_freq_hz; }
-    uint16_t bandwidth_hz(void) const { return _bandwidth_hz; }
+    float center_freq_hz(void) const { return _center_freq_hz; }
+    float bandwidth_hz(void) const { return _bandwidth_hz; }
     float attenuation_dB(void) const { return _attenuation_dB; }
     uint8_t enabled(void) const { return _enable; }
+    void enable() { _enable.set(true); }
     
-private:
+protected:
     AP_Int8 _enable;
-    AP_Int16 _center_freq_hz;
-    AP_Int16 _bandwidth_hz;
+    AP_Float _center_freq_hz;
+    AP_Float _bandwidth_hz;
     AP_Float _attenuation_dB;
 };
 
 typedef NotchFilter<float> NotchFilterFloat;
+typedef NotchFilter<Vector2f> NotchFilterVector2f;
 typedef NotchFilter<Vector3f> NotchFilterVector3f;
 
